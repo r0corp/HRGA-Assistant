@@ -19,6 +19,10 @@ MONTHS = {
 
 TEXT = {
     "id": {
+        "undo": "Undo",
+        "redo": "Redo",
+        "note_deleted": "Catatan dihapus. Klik Undo untuk mengembalikannya.",
+        "update_queued": "Update akan dimulai otomatis setelah proses ini selesai.",
         "deepl": "Terjemahkan",
         "deepl_opening": "Membuka DeepL...",
         "deepl_working": "Menerjemahkan ke Inggris dengan DeepL...",
@@ -161,6 +165,10 @@ TEXT = {
         "failed": "Gagal: ",
     },
     "en": {
+        "undo": "Undo",
+        "redo": "Redo",
+        "note_deleted": "Note deleted. Click Undo to bring it back.",
+        "update_queued": "The update will start automatically when this task finishes.",
         "deepl": "Translate",
         "deepl_opening": "Opening DeepL...",
         "deepl_working": "Translating to English with DeepL...",

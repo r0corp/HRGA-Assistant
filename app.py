@@ -912,6 +912,10 @@ class App:
         # Sembunyikan/tampilkan catatan manual; catatan tetap ikut Generate walau disembunyikan.
         self.notes_toggle = FlatButton(strip, "", self.on_toggle_notes, "ghost", small=True)
         self.notes_toggle.pack(side="right", padx=(0, 4))
+        # Undo/Redo perubahan catatan manual (tambah, hapus, edit), mis. untuk memulihkan catatan terhapus.
+        self.note_redo_btn = FlatButton(strip, "↻  " + self.tr("redo"), self.on_note_redo, "ghost", small=True)
+        self.note_undo_btn = FlatButton(strip, "↺  " + self.tr("undo"), self.on_note_undo, "ghost", small=True)
+        self.note_undo, self.note_redo = [], []
         self.day_strip = tk.Frame(strip, bg=CARD)
         self.day_strip.pack(side="left", fill="x", expand=True)
 
@@ -1147,6 +1151,9 @@ class App:
                                             else (pct, title, note, "error"))
                 elif kind == "done":
                     self._set_busy(False)
+                    work, self.pending_update = getattr(self, "pending_update", None), None
+                    if work:
+                        self._run(self.tr("downloading", p=0), work)
         except queue.Empty:
             pass
         self.root.after(150, self._poll)
@@ -1193,6 +1200,7 @@ class App:
         self.txt.edit_reset()
         self._loading = False
         self.notes = load_notes(day)
+        self.note_undo, self.note_redo = [], []
         self._refresh_note_view()
 
     def _refresh_note_view(self):
@@ -1227,6 +1235,7 @@ class App:
             self.notes_toggle.pack(side="right", padx=(0, 4))
         else:
             self.notes_toggle.pack_forget()
+        self._show_note_history()
         if hidden:
             return
         for i, text in enumerate(self.notes):
@@ -1239,7 +1248,7 @@ class App:
             close = label(top, "\u2715", 8, MUTED, bg=NOTE_SMALL, cursor="hand2")
             close.pack(side="right", padx=6)
             close.bind("<Button-1>", lambda e, i=i: self._delete_note(i))
-            t = tk.Text(note, width=24, height=3, wrap="word", font=(FONT, 9), relief="flat", bd=0,
+            t = tk.Text(note, width=24, height=3, wrap="word", font=(FONT, 9), relief="flat", bd=0, undo=True,
                         bg=NOTE_SMALL, fg=TEXT, insertbackground=TEXT, padx=6, pady=4, highlightthickness=0)
             t.insert("1.0", text)
             t.pack()
@@ -1248,6 +1257,7 @@ class App:
     def on_add_note(self):
         if not self.note_day:
             return
+        self._note_snapshot()
         self.notes.append("")
         # Catatan baru selalu terlihat, jadi tampilkan lagi kalau sedang disembunyikan.
         self.cfg["notes_hidden"] = False
@@ -1292,15 +1302,63 @@ class App:
         step(1)
 
     def _edit_note(self, i, widget):
-        self.notes[i] = widget.get("1.0", "end").strip()
+        text = widget.get("1.0", "end").strip()
+        if text == self.notes[i]:
+            return
+        # Satu langkah undo per sesi mengetik di catatan yang sama.
+        if getattr(self, "_editing_note", None) != i:
+            self._note_snapshot()
+            self._editing_note = i
+        self.notes[i] = text
         save_notes(self.note_day, self.notes)
         self._show_day_strip()
 
     def _delete_note(self, i):
+        self._note_snapshot()
         del self.notes[i]
         save_notes(self.note_day, self.notes)
         self._show_notes()
         self._show_day_strip()
+        self.status.set(self.tr("note_deleted"))
+
+    def _note_snapshot(self):
+        self.note_undo.append(list(self.notes))
+        del self.note_undo[:-50]
+        self.note_redo.clear()
+
+    def _apply_notes(self, notes):
+        self._editing_note = None
+        self.notes = notes
+        save_notes(self.note_day, self.notes)
+        # Catatan yang dipulihkan harus terlihat.
+        if self.cfg.get("notes_hidden"):
+            self.cfg["notes_hidden"] = False
+            settings.save(self.cfg)
+        self._show_notes()
+        self._show_day_strip()
+
+    def on_note_undo(self):
+        if self.note_undo:
+            self.note_redo.append(list(self.notes))
+            self._apply_notes(self.note_undo.pop())
+
+    def on_note_redo(self):
+        if self.note_redo:
+            self.note_undo.append(list(self.notes))
+            self._apply_notes(self.note_redo.pop())
+
+    def _show_note_history(self):
+        """Tombol Undo/Redo muncul begitu ada perubahan catatan yang bisa dibatalkan."""
+        if not (self.note_undo or self.note_redo):
+            self.note_undo_btn.pack_forget()
+            self.note_redo_btn.pack_forget()
+            return
+        # Letakkan di kiri tombol jumlah catatan (kalau tombol itu sedang tampil).
+        after = {"after": self.notes_toggle} if self.notes_toggle.winfo_manager() else {}
+        self.note_redo_btn.pack(side="right", padx=(0, 4), **after)
+        self.note_undo_btn.pack(side="right", padx=(0, 2), after=self.note_redo_btn)
+        self.note_undo_btn.configure(state="normal" if self.note_undo else "disabled")
+        self.note_redo_btn.configure(state="normal" if self.note_redo else "disabled")
 
     def _on_draft_modified(self, _e=None):
         if not self.txt.edit_modified() or getattr(self, "_loading", False):
@@ -1399,6 +1457,12 @@ class App:
             updater.install(path)
             self.events.put(("quit", None))
 
+        if self.busy:
+            # Jangan abaikan klik Update saat app sedang sibuk (mis. cek WhatsApp waktu baru dibuka):
+            # update dijalankan otomatis begitu proses itu selesai.
+            self.pending_update = work
+            self.status.set(self.tr("update_queued"))
+            return
         self._run(self.tr("downloading", p=0), work)
 
     def on_ignore(self):
@@ -1713,6 +1777,22 @@ class App:
         self._run(self.tr("opening"), work)
 
 
+def already_running():
+    """Cegah app terbuka dua kali; .exe yang sedang dipakai dua proses tidak bisa di-update."""
+    import ctypes
+    k = ctypes.windll.kernel32
+    main._mutex = k.CreateMutexW(None, False, r"Local\HRGA-WA-Report-single-instance")
+    if k.GetLastError() != 183:  # ERROR_ALREADY_EXISTS
+        return False
+    # Munculkan jendela yang sudah terbuka.
+    u = ctypes.windll.user32
+    hwnd = u.FindWindowW("TkTopLevel", settings.APP_NAME)
+    if hwnd:
+        u.ShowWindow(hwnd, 9)
+        u.SetForegroundWindow(hwnd)
+    return True
+
+
 def main():
     settings.ensure_dirs()
     logging.basicConfig(
@@ -1721,6 +1801,10 @@ def main():
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         encoding="utf-8",
     )
+    if already_running():
+        return
+    # Sisa file update (exe unduhan dan script) tidak disimpan.
+    updater.cleanup()
     root = tk.Tk()
     App(root)
     root.mainloop()

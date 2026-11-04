@@ -1,6 +1,7 @@
 """Cek dan pasang versi baru dari GitHub Releases."""
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -8,11 +9,17 @@ import tempfile
 import urllib.request
 
 
-VERSION = "1.1.2"
+VERSION = "1.1.3"
 
 # Rilis diambil dari repo ini; file .exe dilampirkan sebagai asset rilis.
 REPO = "r0corp/hrga-wa-report"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
+
+NEW_EXE = os.path.join(tempfile.gettempdir(), "HRGA WA Report.new.exe")
+BAT = os.path.join(tempfile.gettempdir(), "hrga-wa-report-update.bat")
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+log = logging.getLogger(__name__)
 
 
 def parse_version(text):
@@ -48,7 +55,7 @@ def check(timeout=10):
 
 def download(url, progress=None):
     """Unduh .exe baru ke folder sementara, kembalikan path-nya."""
-    dest = os.path.join(tempfile.gettempdir(), "HRGA WA Report.new.exe")
+    dest = NEW_EXE
     req = urllib.request.Request(url, headers={"User-Agent": "hrga-wa-report"})
     with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
@@ -65,20 +72,72 @@ def can_self_update():
     return getattr(sys, "frozen", False)
 
 
+def cleanup():
+    """Hapus sisa file update lama di folder sementara (dipanggil saat app dibuka)."""
+    for path in (NEW_EXE, BAT):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+
+
+def bat_script(new_exe, target, pids):
+    """Script yang menunggu app tertutup, mengganti .exe, membuka app lagi, lalu bersih-bersih."""
+    waits = "\n".join(
+        f'tasklist /nh /fi "PID eq {p}" | find " {p} " >nul && (timeout /t 1 /nobreak >nul & goto wait)'
+        for p in pids)
+    return f"""@echo off
+set tries=0
+:wait
+{waits}
+:move
+move /y "{new_exe}" "{target}" >nul 2>&1 && goto moved
+set /a tries+=1
+if %tries% geq 30 goto moved
+timeout /t 1 /nobreak >nul
+goto move
+:moved
+if exist "{new_exe}" del /f /q "{new_exe}"
+start "" "{target}"
+del "%~f0"
+"""
+
+
+def _spawn_outside_job(cmd):
+    """Jalankan perintah yang tetap hidup walau app keluar.
+
+    App versi onefile berjalan di dalam Job object PyInstaller, sehingga proses anak
+    ikut dimatikan saat app tertutup. Coba lepas dari job; kalau tidak diizinkan,
+    minta WMI yang membuat prosesnya (proses WMI berada di luar job).
+    """
+    flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    # Variabel _PYI_* milik app lama tidak boleh terwarisi: app baru akan mencari DLL
+    # di folder sementara app lama yang sudah dihapus ("Failed to load Python DLL").
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("_PYI", "_MEIPASS"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    try:
+        subprocess.Popen(cmd, creationflags=flags | CREATE_BREAKAWAY_FROM_JOB, close_fds=True, env=env)
+        return "breakaway"
+    except OSError as e:
+        log.info("Breakaway dari job ditolak (%s), pakai WMI.", e)
+    line = subprocess.list2cmdline(cmd).replace("'", "''")
+    ps = ("$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
+          f"-Arguments @{{CommandLine='{line}'}}; exit $r.ReturnValue")
+    subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                   creationflags=subprocess.CREATE_NO_WINDOW, check=True, timeout=60)
+    return "wmi"
+
+
 def install(new_exe):
     """Ganti .exe yang sedang berjalan setelah app ditutup, lalu buka lagi.
 
-    File .exe yang sedang berjalan tidak bisa ditimpa, jadi penggantian
-    dilakukan oleh script .bat kecil yang menunggu proses ini selesai.
+    File .exe yang sedang berjalan tidak bisa ditimpa, jadi penggantian dilakukan oleh
+    script .bat kecil yang menunggu proses app (dan proses induk onefile-nya) selesai.
+    File unduhan dihapus setelah dipakai.
     """
     target = sys.executable
-    bat = os.path.join(tempfile.gettempdir(), "hrga-wa-report-update.bat")
-    with open(bat, "w", encoding="mbcs") as f:
-        f.write(f"""@echo off
-:wait
-tasklist /fi "PID eq {os.getpid()}" | find "{os.getpid()}" >nul && (timeout /t 1 /nobreak >nul & goto wait)
-move /y "{new_exe}" "{target}" >nul
-start "" "{target}"
-del "%~f0"
-""")
-    subprocess.Popen(["cmd", "/c", bat], creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS)
+    with open(BAT, "w", encoding="mbcs") as f:
+        f.write(bat_script(new_exe, target, (os.getpid(), os.getppid())))
+    how = _spawn_outside_job(["cmd", "/c", BAT])
+    log.info("Script update dijalankan (%s): %s -> %s", how, new_exe, target)

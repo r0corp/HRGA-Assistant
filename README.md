@@ -14,7 +14,7 @@ App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report den
   - Hanya chat dari jam kerja (bawaannya 06:00–17:00). Foto, stiker, dan ucapan duka dibuang, dan password, OTP, serta nomor rekening disamarkan sebelum dikirim.
   - Kalau Claude tidak terpasang atau belum login, app menyusun draf tanpa AI: dikelompokkan per jenis pekerjaan dengan status selesai/dalam proses.
 - **Draf ala Sticky Notes per tanggal:** draf report tampil di kertas kuning per tanggal yang tersimpan otomatis. Pindah tanggal lewat deretan chip tanggal atau kalender.
-- **Catatan manual:** tambahkan sticky note untuk pekerjaan yang tidak ada di chat; catatan ini ikut masuk report saat Generate. Catatan bisa disembunyikan.
+- **Catatan manual:** tambahkan sticky note untuk pekerjaan yang tidak ada di chat; catatan ini ikut masuk report saat Generate. Catatan bisa disembunyikan, dan catatan yang terhapus bisa dikembalikan dengan Undo/Redo.
 - **Kalender dengan libur nasional:** klik tanggal report untuk membuka kalender dropdown, lengkap dengan daftar libur nasional Indonesia bulan itu.
 - **Kirim ke grup:** report dikirim hanya ke grup **GRUP TEAM HRGA**. Selain itu, draf bisa disalin atau disimpan sebagai PDF berkop logo perusahaan.
 - **Terjemahkan (DeepL):** satu klik menerjemahkan draf ke Inggris lewat DeepL web (gratis, tanpa API key). Nama hari di judul tetap Indonesia, sapaan pak/mas/mba tidak diubah jadi Mr./Ms., dan Ctrl+Z mengembalikan versi Indonesia.
