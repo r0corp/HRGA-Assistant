@@ -2,7 +2,7 @@
 
 App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report dengan Claude, lalu kirim ke grup tim.
 
-![Tampilan utama](docs/main-1.1.0.png)
+![Tampilan utama](docs/main-1.1.1.png)
 
 ## Fitur
 
@@ -13,6 +13,9 @@ App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report den
   - Semua tool Claude dimatikan; Claude hanya menerima teks chat dan mengembalikan teks report.
   - Hanya chat dari jam kerja (bawaannya 06:00–17:00). Foto, stiker, dan ucapan duka dibuang, dan password, OTP, serta nomor rekening disamarkan sebelum dikirim.
   - Kalau Claude tidak terpasang atau belum login, app menyusun draf tanpa AI: dikelompokkan per jenis pekerjaan dengan status selesai/dalam proses.
+- **Draf ala Sticky Notes per tanggal:** draf report tampil di kertas kuning per tanggal yang tersimpan otomatis. Pindah tanggal lewat deretan chip tanggal atau kalender.
+- **Catatan manual:** tambahkan sticky note untuk pekerjaan yang tidak ada di chat; catatan ini ikut masuk report saat Generate. Catatan bisa disembunyikan.
+- **Kalender dengan libur nasional:** klik tanggal report untuk membuka kalender dropdown, lengkap dengan daftar libur nasional Indonesia bulan itu.
 - **Kirim ke grup:** report dikirim hanya ke grup **GRUP TEAM HRGA**. Selain itu, draf bisa disalin atau disimpan sebagai PDF berkop logo perusahaan.
 - **Timeline 5 hari kerja:** menandai hari yang sudah report ke grup dan yang terlewat, dibaca langsung dari isi grup. Report yang dikirim manual juga ikut terhitung.
 - **Indikator WhatsApp dan Claude:** menunjukkan apakah sesi WhatsApp Web dan login Claude masih tersambung.
@@ -21,7 +24,7 @@ App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report den
 - **Jalan otomatis:** app bisa dibuka otomatis setiap Windows menyala.
 - **Update otomatis:** app mengecek rilis baru di GitHub saat dibuka. Bisa juga dicek manual di Pengaturan > Cek update.
 
-![Pengaturan](docs/settings-1.1.0.png)
+![Pengaturan](docs/settings-1.1.1.png)
 
 ## Instalasi
 
