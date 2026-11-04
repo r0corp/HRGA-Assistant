@@ -1,0 +1,6 @@
+playwright
+fpdf2
+sv-ttk
+pyinstaller
+pillow
+pytest
