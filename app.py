@@ -18,7 +18,7 @@ import sv_ttk
 
 import time
 
-from core import autostart, claude_ai, deepl, history, settings, updater
+from core import autostart, chat, claude_ai, deepl, history, settings, updater
 from core.i18n import DAYS, DAYS_SHORT, LANGS, MONTHS, t
 from core.pdf import save_pdf
 from core.reader import WhatsApp, is_self_chat
@@ -630,6 +630,217 @@ class SettingsDialog(tk.Toplevel):
 
 # ---------- jendela utama ----------
 
+class ChatWindow(tk.Toplevel):
+    """Chat dengan Claude; konteksnya draf dan chat WhatsApp tanggal yang sedang dibuka."""
+
+    def __init__(self, app):
+        super().__init__(app.root, bg=BG)
+        self.app = app
+        tr = app.tr
+        self.title(tr("chat_title"))
+        self.minsize(360, 380)
+        # Jendela kecil, menempel di sisi kanan bawah jendela utama.
+        app.root.update_idletasks()
+        w, h = 420, 520
+        x = app.root.winfo_rootx() + app.root.winfo_width() - w - 30
+        y = app.root.winfo_rooty() + app.root.winfo_height() - h - 40
+        self.geometry(f"{w}x{h}+{max(x, 0)}+{max(y, 0)}")
+        try:
+            self.iconphoto(False, app.icon)
+        except (tk.TclError, AttributeError):
+            pass
+        self.session = None
+        self.reply = []  # potongan jawaban yang sedang mengalir
+        self.v_ctx = tk.BooleanVar(value=True)
+
+        # Kop seperti sidebar: judul, garis merah, latar abu-abu muda.
+        self.configure(bg=SIDE)
+        head = tk.Frame(self, bg=SIDE)
+        head.pack(fill="x", padx=14, pady=(12, 0))
+        label(head, "💬  " + tr("chat_title"), 11, TEXT, True, bg=SIDE).pack(side="left")
+        FlatButton(head, tr("chat_clear"), self.clear, "ghost", small=True).pack(side="right")
+        tk.Frame(self, bg=RED, height=3, width=40).pack(anchor="w", padx=14, pady=(6, 6))
+        ttk.Style().configure("Side.TCheckbutton", background=SIDE, font=(FONT, 8))
+        ttk.Checkbutton(self, text=tr("chat_context"), variable=self.v_ctx,
+                        style="Side.TCheckbutton").pack(anchor="w", padx=12)
+
+        # Kotak ketik dipasang lebih dulu (dari bawah) supaya tombolnya tidak tertutup.
+        label(self, tr("chat_hint"), 8, MUTED, bg=SIDE).pack(side="bottom", anchor="w", padx=14, pady=(0, 8))
+        box = tk.Frame(self, bg=SIDE)
+        box.pack(side="bottom", fill="x", padx=14, pady=(0, 4))
+        btns = tk.Frame(box, bg=SIDE)
+        btns.pack(side="right", fill="y", padx=(6, 0))
+        self.send_btn = FlatButton(btns, tr("chat_send"), self.send, "primary", small=True)
+        self.send_btn.pack(fill="x")
+        self.stop_btn = FlatButton(btns, tr("chat_stop"), self.stop, small=True)
+        self.stop_btn.pack(fill="x", pady=(4, 0))
+        self.input = tk.Text(box, height=3, wrap="word", font=(FONT, 9), relief="flat", bd=0,
+                             highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
+                             padx=8, pady=6, undo=True)
+        self.input.pack(side="left", fill="both", expand=True)
+
+        card_ = RoundCard(self, expand=True)
+        card_.configure(bg=SIDE)
+        card_.pack(fill="both", expand=True, padx=14, pady=(6, 8))
+        frame = tk.Frame(card_.body, bg=CARD)
+        frame.pack(fill="both", expand=True, padx=2, pady=4)
+        self.log = tk.Text(frame, wrap="word", font=(FONT, 9), relief="flat", bd=0, bg=CARD, fg=TEXT,
+                           padx=10, pady=8, spacing1=1, spacing3=1, highlightthickness=0, cursor="arrow",
+                           selectbackground="#f6d5db", selectforeground=TEXT)
+        bar = ttk.Scrollbar(frame, orient="vertical", command=self.log.yview)
+        self.log.configure(yscrollcommand=bar.set)
+        bar.pack(side="right", fill="y")
+        self.log.pack(side="left", fill="both", expand=True)
+        self.log.tag_configure("who_user", foreground=RED, font=(FONT, 8, "bold"), spacing1=8)
+        self.log.tag_configure("who_ai", foreground=MUTED, font=(FONT, 8, "bold"), spacing1=8)
+        # Pesan sendiri berlatar merah muda, jawaban Claude berlatar kertas kuning seperti draf.
+        self.log.tag_configure("user", background="#fbe9ec", lmargin1=4, lmargin2=4, rmargin=4)
+        self.log.tag_configure("ai", background=NOTE_BG, lmargin1=4, lmargin2=4, rmargin=4)
+        self.log.tag_configure("muted", foreground=MUTED, font=(FONT, 8, "italic"))
+        self.log.tag_configure("error", foreground=RED)
+        # Teks chat bisa diblok dan disalin, tapi tidak bisa diketik.
+        self.log.bind("<Key>", lambda e: None if (e.state & 4 and e.keysym.lower() in ("c", "a")) else "break")
+        # Enter kirim, Shift+Enter baris baru.
+        self.input.bind("<Return>", lambda e: (self.send(), "break")[1])
+        self.input.bind("<Shift-Return>", lambda e: None)
+
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self._render_history()
+        self._set_running(False)
+        self.input.focus_set()
+
+    # ----- tampilan -----
+
+    def _write(self, text, *tags):
+        self.log.insert("end", text, tags)
+        self.log.see("end")
+
+    def _render_history(self):
+        self.log.delete("1.0", "end")
+        if not self.app.chat_history:
+            self._write(self.app.tr("chat_welcome") + "\n", "muted")
+        for role, text in self.app.chat_history:
+            self._show_message(role, text)
+
+    def _show_message(self, role, text):
+        if role == "user":
+            self._write(self.app.tr("chat_you") + "\n", "who_user")
+            self._write(text.strip() + "\n", "user")
+        else:
+            self._write("Claude\n", "who_ai")
+            self._write(chat.display_text(text) + "\n", "ai")
+            report = chat.extract_report(text)
+            if report:
+                self._apply_button(report)
+
+    def _apply_button(self, report):
+        btn = FlatButton(self.log, "✓  " + self.app.tr("chat_apply"),
+                         lambda: self._apply(report), small=True)
+        self.log.window_create("end", window=btn, padx=0, pady=4)
+        self._write("\n")
+
+    def _apply(self, report):
+        day = self.app.note_day
+        if not day:
+            return
+        self.app._replace_draft(day, compact_report(report))
+        self.app.status.set(self.app.tr("chat_applied"))
+        self._write(self.app.tr("chat_applied") + "\n", "muted")
+
+    def _set_running(self, on):
+        self.send_btn.configure(state="disabled" if on else "normal")
+        self.stop_btn.configure(state="normal" if on else "disabled")
+
+    # ----- aksi -----
+
+    def send(self):
+        if self.session:
+            return
+        message = self.input.get("1.0", "end").strip()
+        if not message:
+            return
+        app = self.app
+        if app.claude_state != "on" or not app.claude_cli:
+            messagebox.showinfo(settings.APP_NAME, app.tr("chat_no_claude"), parent=self)
+            return
+        self.input.delete("1.0", "end")
+        if not app.chat_history:
+            self.log.delete("1.0", "end")
+        self._show_message("user", message)
+        self._write("Claude\n", "who_ai")
+        self.reply_start = self.log.index("end-1c")
+        self._write(app.tr("chat_thinking"), "muted", "thinking")
+
+        context = ""
+        day = app.note_day
+        if self.v_ctx.get() and day:
+            picked = {n: app.chats[n] for n in app.table.checked() if n in app.chats} or app.chats
+            context = chat.context_text(app._report_text(), picked, day, app.cfg["start_hour"],
+                                        app.cfg["end_hour"], app.cfg["name"], app.cfg["routine"], app.notes)
+        prompt = chat.build_prompt(app.chat_history, message, context)
+        history = app.chat_history
+        history.append(("user", message))
+        self.reply = []
+        self.session = session = chat.Session(app.claude_cli)
+        self._set_running(True)
+
+        def target():
+            try:
+                text = session.ask(prompt, lambda part: app.events.put(("chat_part", part)))
+                app.events.put(("chat_done", text))
+            except Exception as e:
+                log.warning("Chat Claude gagal: %s", e)
+                app.events.put(("chat_error", str(e)))
+
+        threading.Thread(target=target, daemon=True).start()
+
+    def on_part(self, part):
+        if not self.reply:
+            self.log.delete("thinking.first", "thinking.last")
+        self.reply.append(part)
+        # Penanda [REPORT] tidak ditampilkan; teks akhir dirapikan saat jawaban selesai.
+        self._write(part, "ai", "streaming")
+
+    def on_done(self, text):
+        self.session = None
+        self._set_running(False)
+        if self.log.tag_ranges("thinking"):
+            self.log.delete("thinking.first", "thinking.last")
+        if self.log.tag_ranges("streaming"):
+            self.log.delete("streaming.first", "streaming.last")
+        text = text or "".join(self.reply)
+        if text.strip():
+            self.app.chat_history.append(("assistant", text))
+            self._write(chat.display_text(text) + "\n", "ai")
+            report = chat.extract_report(text)
+            if report:
+                self._apply_button(report)
+        else:
+            self._write(self.app.tr("chat_stopped") + "\n", "muted")
+            # Pertanyaan tanpa jawaban dibuang dari riwayat supaya tidak membingungkan Claude.
+            if self.app.chat_history and self.app.chat_history[-1][0] == "user":
+                self.app.chat_history.pop()
+
+    def on_error(self, err):
+        self.on_done("")
+        self._write(self.app.tr("failed") + err + "\n", "error")
+
+    def stop(self):
+        if self.session:
+            self.session.stop()
+
+    def clear(self):
+        if self.session:
+            return
+        self.app.chat_history.clear()
+        self._render_history()
+
+    def close(self):
+        self.stop()
+        self.app.chat_win = None
+        self.destroy()
+
+
 class App:
     def __init__(self, root):
         self.root = root
@@ -647,6 +858,9 @@ class App:
         self.history = history.load(settings.HISTORY_FILE)
         # Panel progres: None (belum ada proses) atau (persen, judul, keterangan, status).
         self.prog_state = None
+        # Riwayat chat Claude selama app terbuka: [(peran, teks)].
+        self.chat_history = []
+        self.chat_win = None
 
         root.title(settings.APP_NAME)
         root.geometry("1220x780")
@@ -807,6 +1021,8 @@ class App:
         gen = FlatButton(inner, "✨  " + self.tr("generate"), self.on_generate, "primary")
         gen.pack(fill="x")
         self.buttons += [pull, gen]
+        # Chat dengan Claude tetap bisa dipakai saat app sedang sibuk.
+        FlatButton(inner, "💬  " + self.tr("chat"), self.on_chat).pack(fill="x", pady=(6, 0))
 
         # Panel progres: nama proses, persentase, lalu "Complete" saat selesai.
         box = RoundCard(inner)
@@ -1139,6 +1355,13 @@ class App:
                     self.status.set(note)
                     if note != self.tr("generated"):
                         messagebox.showinfo(settings.APP_NAME, note)
+                elif kind in ("chat_part", "chat_done", "chat_error"):
+                    win = self.chat_win
+                    if win and win.winfo_exists():
+                        {"chat_part": win.on_part, "chat_done": win.on_done, "chat_error": win.on_error}[kind](value)
+                    elif kind == "chat_done" and value:
+                        # Jendela sudah ditutup: jawaban tetap disimpan di riwayat.
+                        self.chat_history.append(("assistant", value))
                 elif kind == "translated":
                     self._replace_draft(*value)
                     self.status.set(self.tr("translated"))
@@ -1673,6 +1896,14 @@ class App:
             return
 
         self._run(self.tr("claude_writing"), with_claude)
+
+    def on_chat(self):
+        if self.chat_win and self.chat_win.winfo_exists():
+            self.chat_win.deiconify()
+            self.chat_win.lift()
+            self.chat_win.focus_force()
+            return
+        self.chat_win = ChatWindow(self)
 
     def on_translate(self):
         day = self._read_day()

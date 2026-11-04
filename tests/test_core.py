@@ -249,3 +249,16 @@ def test_prompt_contains_nicknames_and_rules():
     p = build_prompt({}, DAY, "Sari", nicknames={"Juproni": "pak", "Saefudin": "pak Udin"})
     assert "Juproni: pak Juproni" in p and "Saefudin: pak Udin" in p
     assert "pembelian barang" in p
+
+
+def test_chat_prompt_and_report_block():
+    from core import chat
+    ctx = chat.context_text("Daily Report X.\n\n1. Tes", {"TCI Andi": [msg("09:00", "printer lantai 2 macet tolong cek")]},
+                            DAY, 6, 17, "Rohman")
+    assert "printer lantai 2" in ctx and "1. Tes" in ctx
+    prompt = chat.build_prompt([("user", "halo"), ("assistant", "hai")], "poin 1 dari mana?", ctx)
+    assert "Penulis: halo" in prompt and "Claude: hai" in prompt and prompt.endswith("poin 1 dari mana?")
+    reply = "Sudah saya hapus.\n[REPORT]\nDaily Report X.\n\n1. A\n[/REPORT]\nSilakan cek."
+    assert chat.extract_report(reply) == "Daily Report X.\n\n1. A"
+    assert "[REPORT]" not in chat.display_text(reply)
+    assert chat.extract_report("tanpa blok") is None
