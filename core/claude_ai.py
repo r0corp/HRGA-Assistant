@@ -68,6 +68,13 @@ ROUTINE = {
 }
 
 
+# Catatan manual dari user: pekerjaan yang tidak ada di chat.
+MANUAL = {
+    "id": "Catatan manual dari penulis (pekerjaan yang tidak ada di chat). WAJIB dimasukkan sebagai poin report; rapikan kalimatnya tanpa mengubah isinya:\n",
+    "en": "Manual notes from the author (work that is not in the chats). They MUST be included as report points; tidy the wording without changing the content:\n",
+}
+
+
 def find_cli():
     """Lokasi claude.exe: dari PATH, instalasi CLI, atau bawaan aplikasi Claude desktop."""
     found = shutil.which("claude")
@@ -128,7 +135,7 @@ def chat_transcript(chats, day, start_hour, end_hour, me="Saya"):
     return "\n\n".join(parts)
 
 
-def build_prompt(chats, day, name="", start_hour=6, end_hour=17, lang="id", routine=()):
+def build_prompt(chats, day, name="", start_hour=6, end_hour=17, lang="id", routine=(), manual=()):
     title = report_title(day, name, lang)
     items = "\n".join(f"  {r}" for r in routine)
     rules = RULES[lang].format(
@@ -137,7 +144,11 @@ def build_prompt(chats, day, name="", start_hour=6, end_hour=17, lang="id", rout
         routine=ROUTINE[lang].format(items=items) if routine else "",
     )
     chats_text = chat_transcript(chats, day, start_hour, end_hour)
-    return f"{rules}\n\nChat kerja tanggal {day.isoformat()} (jam {start_hour:02d}:00-{end_hour:02d}:00):\n\n{chats_text}\n"
+    notes = ""
+    if manual:
+        notes = MANUAL[lang] + "\n".join(f"- {' '.join(redact(m).split())}" for m in manual) + "\n\n"
+    return (f"{rules}\n\n{notes}"
+            f"Chat kerja tanggal {day.isoformat()} (jam {start_hour:02d}:00-{end_hour:02d}:00):\n\n{chats_text}\n")
 
 
 def tidy(text, title):

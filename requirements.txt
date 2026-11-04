@@ -1,6 +1,7 @@
 playwright
 fpdf2
 sv-ttk
+holidays
 pyinstaller
 pillow
 pytest

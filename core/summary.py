@@ -145,7 +145,7 @@ def describe(chat, messages, topic, lang):
     return main["time"], who, f"{detail}; {status}."
 
 
-def build_report(chats, day, name="", start_hour=6, end_hour=17, lang="id", routine=()):
+def build_report(chats, day, name="", start_hour=6, end_hour=17, lang="id", routine=(), manual=()):
     """chats: {nama_chat: [pesan]} -> teks draf report format daily report."""
     groups = {}  # kunci topik -> {"title", "first", "lines"}
 
@@ -179,6 +179,12 @@ def build_report(chats, day, name="", start_hour=6, end_hour=17, lang="id", rout
             items.append([f"{g['title']} ({who}): {line}"])
         else:
             items.append([f"{g['title']}:"] + [f"- {who}: {line}" for who, line in g["lines"]])
+
+    # Catatan manual (pekerjaan yang tidak ada di chat) masuk sebagai poin sendiri.
+    for text in manual:
+        lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+        if lines:
+            items.append([lines[0]] + [l if l.startswith("-") else f"- {l}" for l in lines[1:]])
 
     # Item rutin diselipkan di posisi acak, tetap sama untuk tanggal yang sama.
     rng = random.Random(day.toordinal())

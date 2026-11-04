@@ -17,6 +17,7 @@ REPORTS_DIR = os.path.join(DATA_DIR, "report")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 LOG_FILE = os.path.join(DATA_DIR, "app.log")
 HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
+NOTES_DIR = os.path.join(DATA_DIR, "notes")
 
 # Report hanya dikirim ke grup ini; sengaja tidak bisa diubah dari app.
 REPORT_GROUP = "GRUP TEAM HRGA"
@@ -35,7 +36,7 @@ DEFAULTS = {
 
 
 def ensure_dirs():
-    for d in (DATA_DIR, RAW_DIR, REPORTS_DIR):
+    for d in (DATA_DIR, RAW_DIR, REPORTS_DIR, NOTES_DIR):
         os.makedirs(d, exist_ok=True)
 
 

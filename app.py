@@ -13,6 +13,7 @@ import tkinter as tk
 from datetime import date, datetime, timedelta
 from tkinter import font as tkfont, messagebox, ttk
 
+import holidays
 import sv_ttk
 
 import time
@@ -38,6 +39,10 @@ BORDER = "#e1e4e8"
 TEXT = "#1f2328"
 MUTED = "#6b7280"
 FONT = "Segoe UI"
+# Warna kertas ala Sticky Notes.
+NOTE_BG = "#fff9db"
+NOTE_BAR = "#ffe680"
+NOTE_SMALL = "#fff1a8"
 
 
 def asset(name):
@@ -52,6 +57,55 @@ def raw_path(day):
 
 def report_path(day, ext="txt"):
     return os.path.join(settings.REPORTS_DIR, f"{day.isoformat()}.{ext}")
+
+
+_HOLIDAYS = {}
+
+
+def national_holidays(year, lang):
+    """{tanggal: nama} libur nasional Indonesia (paket holidays, offline)."""
+    key = (year, lang)
+    if key not in _HOLIDAYS:
+        try:
+            _HOLIDAYS[key] = dict(holidays.Indonesia(years=year, language="id" if lang == "id" else "en_US"))
+        except Exception as e:
+            log.warning("Data libur nasional gagal dimuat: %s", e)
+            _HOLIDAYS[key] = {}
+    return _HOLIDAYS[key]
+
+
+def notes_path(day):
+    return os.path.join(settings.NOTES_DIR, f"{day.isoformat()}.json")
+
+
+def load_notes(day):
+    try:
+        with open(notes_path(day), encoding="utf-8") as f:
+            return [n for n in json.load(f) if isinstance(n, str)]
+    except (OSError, ValueError):
+        return []
+
+
+def save_notes(day, notes):
+    settings.ensure_dirs()
+    notes = [n for n in notes if n.strip()]
+    if notes:
+        with open(notes_path(day), "w", encoding="utf-8") as f:
+            json.dump(notes, f, ensure_ascii=False, indent=1)
+    elif os.path.exists(notes_path(day)):
+        os.remove(notes_path(day))
+
+
+def note_days(limit=7):
+    """Tanggal yang punya draf atau catatan, terbaru dulu."""
+    days = set()
+    for folder in (settings.REPORTS_DIR, settings.NOTES_DIR):
+        for name in os.listdir(folder) if os.path.isdir(folder) else []:
+            try:
+                days.add(date.fromisoformat(name.split(".")[0]))
+            except ValueError:
+                pass
+    return sorted(days, reverse=True)[:limit]
 
 
 def fmt_day(d, lang):
@@ -99,6 +153,8 @@ class FlatButton(tk.Canvas):
         "primary": (RED, "white", RED_DARK, RED),
         "secondary": (CARD, TEXT, "#f1f3f5", BORDER),
         "ghost": (None, RED, None, None),
+        "note": (NOTE_SMALL, TEXT, NOTE_BAR, NOTE_SMALL),
+        "note_active": (NOTE_BAR, TEXT, NOTE_BAR, "#e6c84f"),
     }
 
     def __init__(self, parent, text, command, kind="secondary", small=False, anchor="center", **kw):
@@ -107,7 +163,8 @@ class FlatButton(tk.Canvas):
         self.hover_fill = self.hover_fill or self.fill
         self.edge = self.edge or self.fill
         self.text, self.command, self.anchor = text, command, anchor
-        self.font = tkfont.Font(family=FONT, size=9 if small else 10, weight="bold" if kind == "primary" else "normal")
+        bold = kind in ("primary", "note_active")
+        self.font = tkfont.Font(family=FONT, size=9 if small else 10, weight="bold" if bold else "normal")
         self.padx = 10 if small else 14
         height = self.font.metrics("linespace") + (10 if small else 18)
         width = self.font.measure(text) + 2 * self.padx
@@ -137,6 +194,11 @@ class FlatButton(tk.Canvas):
 
     def _hover(self, on):
         self.hovered = on
+        self._draw()
+
+    def set_text(self, text):
+        self.text = text
+        super().configure(width=self.font.measure(text) + 2 * self.padx)
         self._draw()
 
     def _click(self, e):
@@ -191,12 +253,13 @@ class RoundCard(tk.Canvas):
     isinya; kartu yang di-expand mengikuti ukuran dari layout.
     """
 
-    def __init__(self, parent, radius=12, expand=False, **kw):
+    def __init__(self, parent, radius=12, expand=False, fill=CARD, outline=BORDER, fit_width=False, **kw):
         super().__init__(parent, bg=parent["bg"], highlightthickness=0, bd=0, height=40, **kw)
         self.radius = radius
         self.expand = expand
+        self.fill, self.outline, self.fit_width = fill, outline, fit_width
         self.inset = max(3, radius // 3)
-        self.body = tk.Frame(self, bg=CARD)
+        self.body = tk.Frame(self, bg=fill)
         self._win = self.create_window(self.inset, self.inset, window=self.body, anchor="nw")
         self.bind("<Configure>", self._redraw)
         if not expand:
@@ -204,15 +267,20 @@ class RoundCard(tk.Canvas):
 
     def _fit(self, _e=None):
         h = self.body.winfo_reqheight() + 2 * self.inset
-        if int(self["height"]) != h:
+        if self.winfo_reqheight() != h:
             self.configure(height=h)
+        if self.fit_width:
+            w = self.body.winfo_reqwidth() + 2 * self.inset
+            if self.winfo_reqwidth() != w:
+                self.configure(width=w)
 
     def _redraw(self, e):
         w, h = e.width, e.height
         self.delete("bg")
-        rounded_rect(self, 1, 1, w - 2, h - 2, self.radius, fill=CARD, outline=BORDER, width=1, tags="bg")
+        rounded_rect(self, 1, 1, w - 2, h - 2, self.radius, fill=self.fill, outline=self.outline, width=1, tags="bg")
         self.tag_lower("bg")
-        self.itemconfigure(self._win, width=max(w - 2 * self.inset, 1))
+        if not self.fit_width:
+            self.itemconfigure(self._win, width=max(w - 2 * self.inset, 1))
         if self.expand:
             self.itemconfigure(self._win, height=max(h - 2 * self.inset, 1))
 
@@ -289,29 +357,34 @@ class ChatTable(tk.Frame):
         return [n for n, on in self.picked.items() if not on]
 
 
-class CalendarPopup(tk.Toplevel):
-    """Kalender dropdown di bawah kolom tanggal; klik tanggal untuk memilih."""
+class CalendarPopup(RoundCard):
+    """Kalender dropdown di bawah kolom tanggal; klik tanggal untuk memilih.
+
+    Ditempel di dalam jendela app (place), bukan jendela terpisah, supaya
+    selalu tampil di atas isi app dan tidak pernah tertutup jendela utama.
+    """
 
     def __init__(self, anchor, selected, lang, on_pick):
-        super().__init__(anchor, bg=BORDER)
-        self.overrideredirect(True)
+        root = anchor.winfo_toplevel()
+        super().__init__(root, radius=12, fit_width=True)
         self.lang, self.on_pick = lang, on_pick
         self.selected = selected or date.today()
         self.month = self.selected.replace(day=1)
 
-        self.body = tk.Frame(self, bg=CARD, padx=10, pady=10)
-        self.body.pack(padx=1, pady=1)
+        self.grid_box = tk.Frame(self.body, bg=CARD, padx=8, pady=8)
+        self.grid_box.pack(side="left", anchor="n")
+        tk.Frame(self.body, bg=BORDER, width=1).pack(side="left", fill="y", pady=10)
+        # Daftar libur nasional bulan yang sedang ditampilkan.
+        self.side = tk.Frame(self.body, bg=CARD, width=200, padx=12, pady=10)
+        self.side.pack(side="left", fill="y")
+        self.side.pack_propagate(False)
         self._draw()
 
-        anchor.update_idletasks()
-        self.geometry(f"+{anchor.winfo_rootx()}+{anchor.winfo_rooty() + anchor.winfo_height() + 4}")
-        # Selalu di atas jendela utama. Dulu kalender ditutup saat kehilangan
-        # fokus, tapi di Windows fokus langsung kembali ke jendela utama saat
-        # mouse dilepas sehingga kalender tertutup sebelum terlihat.
-        self.transient(anchor.winfo_toplevel())
-        self.attributes("-topmost", True)
-        self.lift()
-        self.bind("<Escape>", lambda e: self.destroy())
+        root.update_idletasks()
+        x = anchor.winfo_rootx() - root.winfo_rootx()
+        y = anchor.winfo_rooty() - root.winfo_rooty() + anchor.winfo_height() + 4
+        self.place(x=x, y=y)
+        tk.Misc.tkraise(self)
 
     def _shift(self, months):
         y, m = divmod(self.month.month - 1 + months, 12)
@@ -319,10 +392,12 @@ class CalendarPopup(tk.Toplevel):
         self._draw()
 
     def _draw(self):
-        for w in self.body.winfo_children():
+        for w in self.grid_box.winfo_children() + self.side.winfo_children():
             w.destroy()
+        off = {**national_holidays(self.month.year - 1, self.lang), **national_holidays(self.month.year, self.lang),
+               **national_holidays(self.month.year + 1, self.lang)}
 
-        head = tk.Frame(self.body, bg=CARD)
+        head = tk.Frame(self.grid_box, bg=CARD)
         head.grid(row=0, column=0, columnspan=7, sticky="we", pady=(0, 6))
         nav = dict(bg=CARD, fg=TEXT, font=(FONT, 12), cursor="hand2", padx=6)
         prev = tk.Label(head, text="\u2039", **nav)
@@ -335,7 +410,7 @@ class CalendarPopup(tk.Toplevel):
                  bg=CARD, fg=TEXT, font=(FONT, 10, "bold")).pack()
 
         for col, name in enumerate(DAYS_SHORT[self.lang]):
-            tk.Label(self.body, text=name, bg=CARD, fg=RED if col >= 5 else MUTED, font=(FONT, 8, "bold"),
+            tk.Label(self.grid_box, text=name, bg=CARD, fg=RED if col >= 5 else MUTED, font=(FONT, 8, "bold"),
                      width=4).grid(row=1, column=col, pady=(0, 2))
 
         today = date.today()
@@ -345,15 +420,33 @@ class CalendarPopup(tk.Toplevel):
                 picked = d == self.selected
                 bg = RED if picked else CARD
                 fg = "white" if picked else (TEXT if d.month == self.month.month else "#c0c4ca")
-                cell = tk.Label(self.body, text=str(d.day), bg=bg, fg=fg, width=4, pady=4, cursor="hand2",
+                cell = tk.Label(self.grid_box, text=str(d.day), bg=bg, fg=fg, width=4, pady=4, cursor="hand2",
                                 font=(FONT, 9, "bold" if d == today or picked else "normal"))
                 if d == today and not picked:
+                    cell.configure(fg=RED)
+                # Libur nasional ditandai merah seperti hari Minggu.
+                if (d in off or col == 6) and not picked and d.month == self.month.month:
                     cell.configure(fg=RED)
                 cell.grid(row=row, column=col, padx=1, pady=1)
                 cell.bind("<Button-1>", lambda e, d=d: self._pick(d))
                 if not picked:
                     cell.bind("<Enter>", lambda e, c=cell: c.configure(bg="#f6d5db"))
                     cell.bind("<Leave>", lambda e, c=cell: c.configure(bg=CARD))
+
+        label(self.side, t(self.lang, "holidays_title"), 9, TEXT, True, bg=CARD).pack(anchor="w")
+        label(self.side, f"{MONTHS[self.lang][self.month.month - 1]} {self.month.year}", 8, MUTED, bg=CARD).pack(
+            anchor="w", pady=(0, 8))
+        month_off = sorted((d, n) for d, n in off.items()
+                           if d.year == self.month.year and d.month == self.month.month)
+        if not month_off:
+            label(self.side, t(self.lang, "holidays_none"), 9, MUTED, bg=CARD, wraplength=170,
+                  justify="left").pack(anchor="w")
+        for d, name in month_off:
+            row = tk.Frame(self.side, bg=CARD)
+            row.pack(fill="x", pady=(0, 6))
+            label(row, f"{d.day:2d}", 10, RED, True, bg=CARD, width=3, anchor="w").pack(side="left", anchor="n")
+            label(row, f"{DAYS_SHORT[self.lang][d.weekday()]} \u00b7 {name}", 9, TEXT, bg=CARD,
+                  wraplength=140, justify="left").pack(side="left", anchor="n")
 
     def _pick(self, d):
         self.on_pick(d)
@@ -564,15 +657,26 @@ class App:
         # Pesan status (mis. "Report disalin") tampil di panel progres saat tidak ada proses berjalan.
         self.status.trace_add("write", lambda *_: self._status_to_panel())
 
+        # Tanggal yang draf dan catatannya sedang ditampilkan.
+        self.note_day = None
+        self.notes = []
+        self._save_job = None
         self._build()
-        self._load_saved(date.today())
+        self._switch_day(date.today())
+        # Ganti tanggal (kalender, Hari ini, Kemarin) langsung membuka catatan tanggal itu.
+        self.v_date.trace_add("write", lambda *_: self._on_date_change())
         root.after(150, self._poll)
         root.bind_all("<Button-1>", self._click_anywhere, add="+")
+        root.bind("<Escape>", lambda e: self._close_calendar(), add="+")
         # Kalender ikut tertutup kalau jendela utama dipindah atau diperkecil.
-        root.bind("<Configure>", lambda e: e.widget is root and self._close_calendar(), add="+")
+        root.bind("<Configure>", self._root_moved, add="+")
         # Saat app dibuka: cek koneksi WhatsApp (sekaligus riwayat report) dan versi baru.
         root.after(800, self.on_check_wa)
         root.after(1000, self.check_claude)
+        # Muat data libur nasional di belakang layar supaya kalender langsung siap.
+        threading.Thread(target=lambda: log.info("Libur nasional %d: %d hari", date.today().year,
+                                                 len(national_holidays(date.today().year, self.lang))),
+                         daemon=True).start()
         root.after(1500, lambda: self.on_check_update(silent=True))
 
     @property
@@ -623,7 +727,11 @@ class App:
 
         self.status.set(self.tr("ready"))
         self._show_chats(self.chats, checked)
+        self._loading = True
         self.txt.insert("1.0", draft)
+        self.txt.edit_modified(False)
+        self._loading = False
+        self._refresh_note_view()
         self._show_wa_state()
         self._show_update()
         self._set_busy(self.busy)
@@ -793,17 +901,45 @@ class App:
         copy.pack(side="right", padx=(0, 6))
         self.buttons += [send, pdf, copy]
 
-        tk.Frame(box, bg=BORDER, height=1).pack(fill="x")
-        frame = tk.Frame(box, bg=CARD)
-        frame.pack(fill="both", expand=True, padx=(0, 6), pady=(0, 8))
+        # Deretan catatan per tanggal + tombol tambah catatan manual.
+        strip = tk.Frame(box, bg=CARD)
+        strip.pack(fill="x", padx=16, pady=(0, 8))
+        add = FlatButton(strip, "+ " + self.tr("add_note"), self.on_add_note, small=True)
+        add.pack(side="right")
+        # Sembunyikan/tampilkan catatan manual; catatan tetap ikut Generate walau disembunyikan.
+        self.notes_toggle = FlatButton(strip, "", self.on_toggle_notes, "ghost", small=True)
+        self.notes_toggle.pack(side="right", padx=(0, 4))
+        self.day_strip = tk.Frame(strip, bg=CARD)
+        self.day_strip.pack(side="left", fill="x", expand=True)
+
+        # Catatan manual (sticky note kecil) untuk tanggal ini.
+        self.notes_strip = tk.Frame(box, bg=CARD)
+        self.notes_strip.pack(fill="x", padx=16)
+
+        # Catatan utama: draf report tanggal ini, kertas kuning ala Sticky Notes.
+        paper_card = RoundCard(box, radius=12, expand=True, fill=NOTE_BG, outline=NOTE_BAR)
+        paper_card.pack(fill="both", expand=True, padx=16, pady=(6, 14))
+        paper = paper_card.body
+        bar_ = tk.Frame(paper, bg=NOTE_BAR)
+        bar_.pack(fill="x")
+        self.note_title = label(bar_, "", 9, TEXT, True, bg=NOTE_BAR)
+        self.note_title.pack(side="left", padx=12, pady=5)
+        self.note_saved = label(bar_, "", 8, MUTED, bg=NOTE_BAR)
+        self.note_saved.pack(side="right", padx=12)
+        frame = tk.Frame(paper, bg=NOTE_BG)
+        frame.pack(fill="both", expand=True)
         self.txt = tk.Text(frame, wrap="word", font=(FONT, 10), undo=True, relief="flat", bd=0,
-                           bg=CARD, fg=TEXT, insertbackground=TEXT, selectbackground="#f6d5db",
-                           selectforeground=TEXT, padx=18, pady=14, spacing1=2, spacing3=3,
+                           bg=NOTE_BG, fg=TEXT, insertbackground=TEXT, selectbackground="#f6d5db",
+                           selectforeground=TEXT, padx=16, pady=12, spacing1=2, spacing3=3,
                            highlightthickness=0)
         bar = ttk.Scrollbar(frame, orient="vertical", command=self.txt.yview)
         self.txt.configure(yscrollcommand=bar.set)
         bar.pack(side="right", fill="y")
         self.txt.pack(side="left", fill="both", expand=True)
+        # Simpan otomatis sebentar setelah berhenti mengetik.
+        self.txt.bind("<<Modified>>", self._on_draft_modified)
+        self._show_day_strip()
+        self._show_notes()
 
     def _show_claude_state(self):
         color, key = {
@@ -891,7 +1027,13 @@ class App:
         self.calendar = CalendarPopup(entry, parse_day(self.v_date.get()), self.lang,
                                       lambda d: self.v_date.set(fmt_day(d, self.lang)))
         self.calendar_entry = entry
+        self.calendar_geometry = self.root.winfo_geometry()
         return "break"
+
+    def _root_moved(self, e):
+        # Hanya tutup kalender kalau jendela benar-benar dipindah atau diubah ukurannya.
+        if e.widget is self.root and self.root.winfo_geometry() != getattr(self, "calendar_geometry", None):
+            self._close_calendar()
 
     def _close_calendar(self):
         cal = getattr(self, "calendar", None)
@@ -1016,17 +1158,166 @@ class App:
     def _read_day_quiet(self):
         return parse_day(self.v_date.get())
 
-    def _load_saved(self, day):
+    # ---------- catatan per tanggal ----------
+
+    def _on_date_change(self):
+        day = parse_day(self.v_date.get())
+        if day and day != self.note_day:
+            self._switch_day(day)
+
+    def _switch_day(self, day):
+        """Simpan catatan tanggal lama, lalu buka chat, draf, dan catatan tanggal baru."""
+        if self.note_day:
+            self._save_draft_now()
+        self.note_day = day
         try:
             with open(raw_path(day), encoding="utf-8") as f:
                 self._show_chats(json.load(f))
         except (OSError, ValueError):
-            pass
+            self._show_chats({})
         try:
             with open(report_path(day), encoding="utf-8") as f:
-                self.txt.insert("1.0", f.read())
+                text = f.read()
         except OSError:
-            pass
+            text = ""
+        self._loading = True
+        self.txt.delete("1.0", "end")
+        self.txt.insert("1.0", text)
+        self.txt.edit_modified(False)
+        self.txt.edit_reset()
+        self._loading = False
+        self.notes = load_notes(day)
+        self._refresh_note_view()
+
+    def _refresh_note_view(self):
+        if not self.note_day:
+            return
+        self.note_title.configure(text=fmt_day(self.note_day, self.lang))
+        self.note_saved.configure(text="")
+        self._show_day_strip()
+        self._show_notes()
+
+    def _show_day_strip(self):
+        for w in self.day_strip.winfo_children():
+            w.destroy()
+        days = note_days()
+        if self.note_day and self.note_day not in days:
+            days = sorted(days + [self.note_day], reverse=True)[:7]
+        for d in days:
+            kind = "note_active" if d == self.note_day else "note"
+            FlatButton(self.day_strip, f"{DAYS_SHORT[self.lang][d.weekday()]} {d:%d/%m}",
+                       lambda d=d: self.v_date.set(fmt_day(d, self.lang)), kind, small=True).pack(
+                side="left", padx=(0, 6))
+
+    def _show_notes(self):
+        """Sticky note kecil untuk tiap catatan manual tanggal ini."""
+        for w in self.notes_strip.winfo_children():
+            w.destroy()
+        n = len(self.notes)
+        hidden = self.cfg.get("notes_hidden", False)
+        if n:
+            arrow = "\u25b8" if hidden else "\u25be"
+            self.notes_toggle.set_text(f"{arrow} " + self.tr("notes_count", n=n))
+            self.notes_toggle.pack(side="right", padx=(0, 4))
+        else:
+            self.notes_toggle.pack_forget()
+        if hidden:
+            return
+        for i, text in enumerate(self.notes):
+            card_ = RoundCard(self.notes_strip, radius=10, fill=NOTE_SMALL, outline=NOTE_BAR, fit_width=True)
+            card_.pack(side="left", padx=(0, 8), pady=(0, 6), anchor="n")
+            note = card_.body
+            top = tk.Frame(note, bg=NOTE_SMALL)
+            top.pack(fill="x")
+            label(top, self.tr("manual_note"), 8, MUTED, True, bg=NOTE_SMALL).pack(side="left", padx=6)
+            close = label(top, "\u2715", 8, MUTED, bg=NOTE_SMALL, cursor="hand2")
+            close.pack(side="right", padx=6)
+            close.bind("<Button-1>", lambda e, i=i: self._delete_note(i))
+            t = tk.Text(note, width=24, height=3, wrap="word", font=(FONT, 9), relief="flat", bd=0,
+                        bg=NOTE_SMALL, fg=TEXT, insertbackground=TEXT, padx=6, pady=4, highlightthickness=0)
+            t.insert("1.0", text)
+            t.pack()
+            t.bind("<KeyRelease>", lambda e, i=i, t=t: self._edit_note(i, t))
+
+    def on_add_note(self):
+        if not self.note_day:
+            return
+        self.notes.append("")
+        # Catatan baru selalu terlihat, jadi tampilkan lagi kalau sedang disembunyikan.
+        self.cfg["notes_hidden"] = False
+        settings.save(self.cfg)
+        self._show_notes()
+        # Kursor langsung di catatan baru.
+        last = self.notes_strip.winfo_children()[-1].body.winfo_children()[-1]
+        last.focus_set()
+
+    def on_toggle_notes(self):
+        hide = not self.cfg.get("notes_hidden", False)
+        self.cfg["notes_hidden"] = hide
+        settings.save(self.cfg)
+        strip = self.notes_strip
+        start = strip.winfo_height()
+        if hide:
+            # Kecilkan tinggi deretan catatan sampai 0, baru isinya dihapus.
+            self._animate_height(strip, start, 0, self._show_notes)
+        else:
+            self._show_notes()
+            strip.update_idletasks()
+            end = strip.winfo_reqheight()
+            strip.pack_propagate(False)
+            strip.configure(height=1)
+            self._animate_height(strip, 1, end, lambda: strip.pack_propagate(True))
+
+    def _animate_height(self, widget, start, end, done, steps=10, delay=15):
+        widget.pack_propagate(False)
+
+        def step(i):
+            if not widget.winfo_exists():
+                return
+            # Ease-out supaya gerakan melambat di akhir.
+            t = 1 - (1 - i / steps) ** 3
+            widget.configure(height=max(1, round(start + (end - start) * t)))
+            if i < steps:
+                self.root.after(delay, step, i + 1)
+            else:
+                widget.pack_propagate(True)
+                done()
+
+        step(1)
+
+    def _edit_note(self, i, widget):
+        self.notes[i] = widget.get("1.0", "end").strip()
+        save_notes(self.note_day, self.notes)
+        self._show_day_strip()
+
+    def _delete_note(self, i):
+        del self.notes[i]
+        save_notes(self.note_day, self.notes)
+        self._show_notes()
+        self._show_day_strip()
+
+    def _on_draft_modified(self, _e=None):
+        if not self.txt.edit_modified() or getattr(self, "_loading", False):
+            return
+        self.txt.edit_modified(False)
+        if self._save_job:
+            self.root.after_cancel(self._save_job)
+        self._save_job = self.root.after(800, self._save_draft_now)
+
+    def _save_draft_now(self):
+        self._save_job = None
+        if not self.note_day or not hasattr(self, "txt") or not self.txt.winfo_exists():
+            return
+        text = self._report_text()
+        path = report_path(self.note_day)
+        settings.ensure_dirs()
+        if text:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        elif os.path.exists(path):
+            os.remove(path)
+        self.note_saved.configure(text=self.tr("saved_auto"))
+        self._show_day_strip()
 
     def _report_text(self):
         return self.txt.get("1.0", "end").strip()
@@ -1226,23 +1517,28 @@ class App:
         self._run(self.tr("claude_waiting_login"), work)
 
     def _set_draft(self, day, text):
-        self.txt.delete("1.0", "end")
-        self.txt.insert("1.0", text)
         settings.ensure_dirs()
         with open(report_path(day), "w", encoding="utf-8") as f:
             f.write(text)
+        if day != self.note_day:
+            self.v_date.set(fmt_day(day, self.lang))
+            return
+        self.txt.delete("1.0", "end")
+        self.txt.insert("1.0", text)
+        self._show_day_strip()
 
     def on_generate(self):
         day = self._read_day()
         if day is None:
             return
-        if not self.chats:
+        # Report tetap bisa dibuat dari catatan manual saja walau belum tarik chat.
+        if not self.chats and not any(n.strip() for n in self.notes):
             messagebox.showinfo(settings.APP_NAME, self.tr("no_chats"))
             return
 
         picked = {n: self.chats[n] for n in self.table.checked()}
         args = (picked, day, self.cfg["name"], self.cfg["start_hour"], self.cfg["end_hour"], self.lang,
-                self.cfg["routine"])
+                self.cfg["routine"], [n for n in self.notes if n.strip()])
 
         def fallback(reason):
             text = build_report(*args)

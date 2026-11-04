@@ -10,6 +10,8 @@ if ($LASTEXITCODE -ne 0) { throw "Test gagal, build dibatalkan." }
     --name "HRGA WA Report" `
     --collect-data playwright `
     --collect-data sv_ttk `
+    --collect-data holidays `
+    --collect-submodules holidays `
     --add-data "assets;assets" `
     --icon "assets\icon.ico" `
     app.py

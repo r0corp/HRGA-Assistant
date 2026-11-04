@@ -19,6 +19,12 @@ MONTHS = {
 
 TEXT = {
     "id": {
+        "holidays_title": "Libur nasional",
+        "holidays_none": "Tidak ada libur nasional bulan ini.",
+        "notes_count": "{n} catatan",
+        "add_note": "Catatan",
+        "manual_note": "Catatan manual",
+        "saved_auto": "Tersimpan otomatis",
         "wa_login": "Login",
         "logout_all": "Logout semua akun",
         "confirm_logout_all": "Logout WhatsApp dan Claude dari app ini? Untuk memakai app lagi, scan QR WhatsApp dan login Claude ulang.",
@@ -151,6 +157,12 @@ TEXT = {
         "failed": "Gagal: ",
     },
     "en": {
+        "holidays_title": "National holidays",
+        "holidays_none": "No national holidays this month.",
+        "notes_count": "{n} notes",
+        "add_note": "Note",
+        "manual_note": "Manual note",
+        "saved_auto": "Saved automatically",
         "wa_login": "Log in",
         "logout_all": "Log out all accounts",
         "confirm_logout_all": "Log WhatsApp and Claude out of this app? To use the app again, scan the WhatsApp QR code and log in to Claude again.",

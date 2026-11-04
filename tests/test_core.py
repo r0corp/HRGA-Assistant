@@ -190,3 +190,16 @@ def test_jawaban_claude_dirapikan():
     title = "Daily Report Rabu/04 November 2026 (Sari)."
     raw = "Berikut report-nya:\n\n**Daily Report Rabu/4 Nov 2026**\n\n1. **Penanganan printer**: normal."
     assert tidy(raw, title) == title + "\n\n1. Penanganan printer: normal."
+
+
+def test_catatan_manual_masuk_report():
+    chats = {"Andi": [msg("08:15", "form pengajuan ATK minggu ini sudah saya kirim")]}
+    text = build_report(chats, DAY, manual=["Ganti lampu ruang meeting lantai 2\nsudah menyala normal"])
+    assert "Ganti lampu ruang meeting lantai 2" in text
+    assert "- sudah menyala normal" in text
+
+
+def test_catatan_manual_ada_di_prompt_claude():
+    from core.claude_ai import build_prompt
+    p = build_prompt({}, DAY, "Sari", manual=["Ganti lampu ruang meeting lantai 2"])
+    assert "Catatan manual" in p and "- Ganti lampu ruang meeting lantai 2" in p
