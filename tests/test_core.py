@@ -233,3 +233,19 @@ def test_tidy_removes_blank_lines_between_items():
     raw = "Daily Report X.\n\n1. Satu.\n\n- detail\n\n2. Dua.\n\n\n3. Tiga."
     assert tidy(raw, "Daily Report Rabu/04 November 2026 (Budi).") == (
         "Daily Report Rabu/04 November 2026 (Budi).\n\n1. Satu.\n- detail\n2. Dua.\n3. Tiga.")
+
+
+def test_nicknames_parse_and_apply():
+    from core.summary import parse_nicknames, with_nickname
+    nick = parse_nicknames("Juproni = pak\nSaefudin = pak Udin\nrusak tanpa sama dengan\n")
+    assert nick == {"Juproni": "pak", "Saefudin": "pak Udin"}
+    assert with_nickname("Juproni", nick) == "pak Juproni"
+    assert with_nickname("Saefudin", nick) == "pak Udin"
+    assert with_nickname("Annisa Porta", nick) == "Annisa Porta"
+
+
+def test_prompt_contains_nicknames_and_rules():
+    from core.claude_ai import build_prompt
+    p = build_prompt({}, DAY, "Sari", nicknames={"Juproni": "pak", "Saefudin": "pak Udin"})
+    assert "Juproni: pak Juproni" in p and "Saefudin: pak Udin" in p
+    assert "pembelian barang" in p

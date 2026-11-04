@@ -15,7 +15,7 @@ import tempfile
 from datetime import datetime
 
 from core.redact import redact
-from core.summary import MEDIA_RE, SOCIAL_RE, clean, in_window, report_title
+from core.summary import MEDIA_RE, SOCIAL_RE, clean, in_window, nickname_form, report_title
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -30,6 +30,10 @@ RULES = {
 - Satu poin per pekerjaan. Gabungkan chat yang membahas pekerjaan yang sama menjadi satu poin dengan sub-poin per orang.
 - Tulis dari sudut pandang penulis report dengan kalimat kerja yang singkat tapi jelas: apa yang dikerjakan dan hasil atau statusnya (selesai, sudah normal, masih pending, menunggu konfirmasi, dst.).
 - Hanya pekerjaan kantor. Abaikan obrolan pribadi, ucapan duka atau selamat, basa-basi, candaan, notifikasi kurir atau promosi, dan hal sepele yang tidak menghasilkan apa pun.
+- Buang juga: saran cepat lewat chat, info atau permintaan yang hanya diterima, koordinasi kecil (mis. orang datang ke ruangan, janji ketemu), masalah sepele (mis. kertas printer habis, stok kosong), dan pekerjaan yang belum ada hasil atau isinya di chat.
+- Jangan pernah menulis kalimat seperti "tidak tertulis di chat", "detailnya belum ada di chat", atau "topiknya tidak diketahui"; kalau isinya tidak jelas, poin itu dibuang.
+- Permintaan atau pembelian barang (kabel, mouse, titip beli, Shopee, dsb.) tidak dimasukkan sama sekali, kecuali pembelian atau lisensi software.
+- Jangan tulis harga, nomor, atau spesifikasi panjang; cukup inti pekerjaannya dan hasilnya.
 - Jangan mengarang. Semua isi harus berasal dari chat. Kalau statusnya tidak jelas, tulis apa adanya.
 - Jangan pernah menulis password, OTP, PIN, atau nomor rekening.
 - Nama orang: buang awalan "TCI". Pakai sapaan pak/bu/mba/mas hanya kalau terlihat dari chat; kalau ragu, tulis namanya saja.
@@ -50,6 +54,10 @@ Contoh gaya penulisan (nama dan isi hanya contoh):
 - One point per task. Merge chats about the same task into one point with a sub-point per person.
 - Write from the report author's point of view, short but clear: what was done and the result or status (done, back to normal, still pending, waiting for confirmation, etc.).
 - Work only. Ignore personal chats, condolences or greetings, small talk, jokes, courier or promo notifications, and trivial things.
+- Also drop: quick advice over chat, information or requests that were only received, small coordination (e.g. someone dropping by, arranging a meeting), trivial issues (e.g. printer out of paper, empty stock), and work with no result or content in the chats.
+- Never write sentences like "not stated in the chat" or "details not in the chat"; if the content is unclear, drop the point.
+- Requests for or purchases of goods (cables, mice, buying via Shopee, etc.) are never included, except software purchases or licenses.
+- Do not write prices, numbers, or long specifications; keep only the core task and result.
 - Do not invent anything. Everything must come from the chats. If the status is unclear, say so.
 - Never write passwords, OTPs, PINs, or account numbers.
 - People's names: drop the "TCI" prefix. Keep Indonesian honorifics (pak/bu/mba/mas) as they are, only when visible in the chat.
@@ -62,6 +70,11 @@ Style example (names and content are only examples):
 - Budi and Sari: resolved, the storage full notification no longer appears.
 - mba Rina: guided through "Free up space"; files open normally.
 2. Printer support on the 2nd floor (Andi): paper jam, roller cleaned; printer back to normal.""",
+}
+
+NICKNAMES = {
+    "id": "- Pakai sapaan ini setiap menyebut orang tersebut (huruf kecil, sebelum nama), mis. 'pak Juproni':\n{items}\n",
+    "en": "- Always use these Indonesian honorifics before the person's name (lowercase), e.g. 'pak Juproni':\n{items}\n",
 }
 
 ROUTINE = {
@@ -137,13 +150,16 @@ def chat_transcript(chats, day, start_hour, end_hour, me="Saya"):
     return "\n\n".join(parts)
 
 
-def build_prompt(chats, day, name="", start_hour=6, end_hour=17, lang="id", routine=(), manual=()):
+def build_prompt(chats, day, name="", start_hour=6, end_hour=17, lang="id", routine=(), manual=(),
+                 nicknames=None):
     title = report_title(day, name, lang)
     items = "\n".join(f"  {r}" for r in routine)
+    nick = "\n".join(f"  {n}: {nickname_form(n, h)}" for n, h in (nicknames or {}).items())
     rules = RULES[lang].format(
         title=title,
         name=name or "penulis",
-        routine=ROUTINE[lang].format(items=items) if routine else "",
+        routine=(ROUTINE[lang].format(items=items) if routine else "")
+        + (NICKNAMES[lang].format(items=nick) if nick else ""),
     )
     chats_text = chat_transcript(chats, day, start_hour, end_hour)
     notes = ""

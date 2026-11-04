@@ -115,6 +115,29 @@ def person(chat):
     return re.sub(r"(?i)^tci\s+", "", chat).strip()
 
 
+def parse_nicknames(text):
+    """Baris "Juproni = pak" -> {"Juproni": "pak"}."""
+    out = {}
+    for line in (text or "").splitlines():
+        name, sep, hon = line.partition("=")
+        if sep and name.strip() and hon.strip():
+            out[name.strip()] = hon.strip()
+    return out
+
+
+def nickname_form(name, value):
+    """"pak" -> "pak Juproni"; nilai lebih dari satu kata dipakai utuh: "pak Udin"."""
+    return value if len(value.split()) > 1 else f"{value} {name}"
+
+
+def with_nickname(name, nicknames):
+    """Tambahkan sapaan kalau ada: "Juproni" -> "pak Juproni" (cocok juga dengan kata pertama nama)."""
+    for key, value in (nicknames or {}).items():
+        if name.lower() == key.lower() or name.lower().split()[:1] == [key.lower()]:
+            return nickname_form(name, value)
+    return name
+
+
 def classify(messages):
     """Topik dengan kata kunci terbanyak di pesan-pesan chat, atau None."""
     text = " ".join(m["text"] for m in messages)
@@ -145,7 +168,8 @@ def describe(chat, messages, topic, lang):
     return main["time"], who, f"{detail}; {status}."
 
 
-def build_report(chats, day, name="", start_hour=6, end_hour=17, lang="id", routine=(), manual=()):
+def build_report(chats, day, name="", start_hour=6, end_hour=17, lang="id", routine=(), manual=(),
+                 nicknames=None):
     """chats: {nama_chat: [pesan]} -> teks draf report format daily report."""
     groups = {}  # kunci topik -> {"title", "first", "lines"}
 
@@ -168,6 +192,7 @@ def build_report(chats, day, name="", start_hour=6, end_hour=17, lang="id", rout
             key, title = topic[0], topic[1] if lang == "id" else topic[2]
 
         first, who, line = describe(chat, msgs, topic, lang)
+        who = with_nickname(who, nicknames)
         g = groups.setdefault(key, {"title": title, "first": first, "lines": []})
         g["first"] = min(g["first"], first)
         g["lines"].append((who, line))

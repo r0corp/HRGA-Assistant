@@ -19,6 +19,8 @@ MONTHS = {
 
 TEXT = {
     "id": {
+        "nicknames": "Panggilan (satu per baris)",
+        "nicknames_hint": "Contoh: Juproni = pak, Heni = mba. Dipakai di report.",
         "undo": "Undo",
         "redo": "Redo",
         "note_deleted": "Catatan dihapus. Klik Undo untuk mengembalikannya.",
@@ -165,6 +167,8 @@ TEXT = {
         "failed": "Gagal: ",
     },
     "en": {
+        "nicknames": "Honorifics (one per line)",
+        "nicknames_hint": "Example: Juproni = pak, Heni = mba. Used in the report.",
         "undo": "Undo",
         "redo": "Redo",
         "note_deleted": "Note deleted. Click Undo to bring it back.",

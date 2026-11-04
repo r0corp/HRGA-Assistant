@@ -22,7 +22,7 @@ from core import autostart, claude_ai, deepl, history, settings, updater
 from core.i18n import DAYS, DAYS_SHORT, LANGS, MONTHS, t
 from core.pdf import save_pdf
 from core.reader import WhatsApp, is_self_chat
-from core.summary import build_report, in_window, report_title
+from core.summary import build_report, in_window, parse_nicknames, report_title
 
 
 log = logging.getLogger("app")
@@ -516,6 +516,11 @@ class SettingsDialog(tk.Toplevel):
                                padx=6, pady=4, wrap="word")
         self.routine.insert("1.0", "\n".join(cfg["routine"]))
         self._field(box, tr("routine"), self.routine, tr("routine_hint"))
+        self.nicknames = tk.Text(box, height=3, width=40, font=(FONT, 9), relief="flat", bd=0,
+                                 highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
+                                 padx=6, pady=4, wrap="word")
+        self.nicknames.insert("1.0", "\n".join(f"{n} = {h}" for n, h in cfg.get("nicknames", {}).items()))
+        self._field(box, tr("nicknames"), self.nicknames, tr("nicknames_hint"))
 
         # Claude AI: status login akun Claude di laptop ini.
         box = self._group(left, tr("claude_section"))
@@ -576,6 +581,7 @@ class SettingsDialog(tk.Toplevel):
             end_hour=end,
             exclude=[s.strip() for s in self.exclude.get("1.0", "end").split(";") if s.strip()],
             routine=[s.strip() for s in self.routine.get("1.0", "end").splitlines() if s.strip()],
+            nicknames=parse_nicknames(self.nicknames.get("1.0", "end")),
             lang=lang,
         )
         settings.save(self.app.cfg)
@@ -1617,7 +1623,7 @@ class App:
 
         picked = {n: self.chats[n] for n in self.table.checked()}
         args = (picked, day, self.cfg["name"], self.cfg["start_hour"], self.cfg["end_hour"], self.lang,
-                self.cfg["routine"], [n for n in self.notes if n.strip()])
+                self.cfg["routine"], [n for n in self.notes if n.strip()], self.cfg.get("nicknames", {}))
 
         def fallback(reason):
             text = build_report(*args)

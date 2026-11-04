@@ -32,6 +32,8 @@ DEFAULTS = {
     "routine": [],
     # Nama chat yang tidak pernah dibaca, mis. chat keluarga.
     "exclude": [],
+    # Sapaan per orang di report, mis. {"Juproni": "pak", "Heni": "mba"}.
+    "nicknames": {},
 }
 
 
