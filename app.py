@@ -714,9 +714,9 @@ class App:
         top = tk.Frame(main, bg=BG)
         top.pack(fill="x", padx=24, pady=(20, 14))
         label(top, "HRGA Daily Report", 18, TEXT, True).pack(side="left")
-        # Tempat banner "versi baru tersedia" di kanan atas.
+        # Banner "versi baru tersedia" mengisi sisa baris judul, dari kanan sampai dekat judul.
         self.update_slot = tk.Frame(top, bg=BG)
-        self.update_slot.pack(side="right")
+        self.update_slot.pack(side="left", fill="x", expand=True, padx=(28, 0))
 
     def _build_timeline(self, main):
         """Riwayat report ke grup untuk 5 hari kerja terakhir."""
@@ -840,7 +840,7 @@ class App:
         if not self.update_info or self.update_dismissed == self.update_info["version"]:
             return
         banner = RoundCard(self.update_slot, radius=10)
-        banner.pack()
+        banner.pack(fill="x")
         body = banner.body
         label(body, "\u2b06", 11, RED, True, bg=CARD).pack(side="left", padx=(12, 6), pady=6)
         label(body, self.tr("update_available", v=self.update_info["version"]), 9, TEXT, True, bg=CARD).pack(side="left")
