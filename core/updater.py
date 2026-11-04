@@ -24,8 +24,8 @@ def parse_version(text):
     return tuple((parts + [0, 0, 0])[:3])
 
 
-def is_newer(latest, current=VERSION):
-    return parse_version(latest) > parse_version(current)
+def is_newer(latest, current=None):
+    return parse_version(latest) > parse_version(current or VERSION)
 
 
 def check(timeout=10):
