@@ -639,6 +639,7 @@ class App:
         # Kop: logo Tradecorp dengan garis merah di bawahnya.
         if self.logo:
             tk.Label(inner, image=self.logo, bg=SIDE).pack(anchor="w")
+        label(inner, "PT Tradecorp Indonesia", 9, MUTED).pack(anchor="w", pady=(4, 0))
         tk.Frame(inner, bg=RED, height=3, width=56).pack(anchor="w", pady=(10, 18))
 
         # Status WhatsApp; klik untuk cek ulang.
@@ -713,7 +714,6 @@ class App:
         top = tk.Frame(main, bg=BG)
         top.pack(fill="x", padx=24, pady=(20, 14))
         label(top, "HRGA Daily Report", 18, TEXT, True).pack(side="left")
-        label(top, "PT Tradecorp Indonesia", 10, MUTED).pack(side="left", padx=(12, 0), pady=(8, 0))
         # Tempat banner "versi baru tersedia" di kanan atas.
         self.update_slot = tk.Frame(top, bg=BG)
         self.update_slot.pack(side="right")
