@@ -215,9 +215,9 @@ def test_deepl_rebuild_keeps_layout_and_honorifics():
     got = deepl.fix_honorifics(src, got)
     assert got.splitlines() == [
         "Daily Report Rabu/04 November 2026 (Budi).",
+        "",
         "1. Repaired pak Andi's laptop.",
         "   - It's working normally.",
-        "",
         "2. Checked mba Sari's email.",
     ]
 
@@ -226,3 +226,10 @@ def test_deepl_chunks_respect_limit():
     from core import deepl
     parts = deepl.chunks(["a" * 600, "b" * 600, "c" * 600], limit=1300)
     assert [len(p) for p in parts] == [2, 1]
+
+
+def test_tidy_removes_blank_lines_between_items():
+    from core.claude_ai import tidy
+    raw = "Daily Report X.\n\n1. Satu.\n\n- detail\n\n2. Dua.\n\n\n3. Tiga."
+    assert tidy(raw, "Daily Report Rabu/04 November 2026 (Budi).") == (
+        "Daily Report Rabu/04 November 2026 (Budi).\n\n1. Satu.\n- detail\n2. Dua.\n3. Tiga.")

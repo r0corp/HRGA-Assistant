@@ -26,6 +26,7 @@ RULES = {
     "id": """Aturan:
 - Baris pertama persis: {title}
 - Lalu satu baris kosong, lalu daftar bernomor "1.", "2.", dst. Detail memakai sub-poin yang diawali "- ".
+- Jangan ada baris kosong di antara nomor maupun sub-poin; semua poin ditulis rapat.
 - Satu poin per pekerjaan. Gabungkan chat yang membahas pekerjaan yang sama menjadi satu poin dengan sub-poin per orang.
 - Tulis dari sudut pandang penulis report dengan kalimat kerja yang singkat tapi jelas: apa yang dikerjakan dan hasil atau statusnya (selesai, sudah normal, masih pending, menunggu konfirmasi, dst.).
 - Hanya pekerjaan kantor. Abaikan obrolan pribadi, ucapan duka atau selamat, basa-basi, candaan, notifikasi kurir atau promosi, dan hal sepele yang tidak menghasilkan apa pun.
@@ -45,6 +46,7 @@ Contoh gaya penulisan (nama dan isi hanya contoh):
     "en": """Rules:
 - The first line must be exactly: {title}
 - Then one blank line, then a numbered list "1.", "2.", etc. Details use sub-points starting with "- ".
+- No blank lines between numbers or sub-points; keep the list compact.
 - One point per task. Merge chats about the same task into one point with a sub-point per person.
 - Write from the report author's point of view, short but clear: what was done and the result or status (done, back to normal, still pending, waiting for confirmation, etc.).
 - Work only. Ignore personal chats, condolences or greetings, small talk, jokes, courier or promo notifications, and trivial things.
@@ -157,11 +159,10 @@ def tidy(text, title):
     text = re.sub(r"^```\w*\n|\n```$", "", text).strip()
     lines = text.splitlines()
     start = next((i for i, l in enumerate(lines) if l.lower().startswith("daily report")), None)
-    if start is None:
-        lines = [title, ""] + lines
-    else:
-        lines = [title] + lines[start + 1:]
-    return "\n".join(lines).strip()
+    body = lines if start is None else lines[start + 1:]
+    # Daftar ditulis rapat: tanpa baris kosong di antara nomor (hanya satu setelah judul).
+    body = [l.rstrip() for l in body if l.strip()]
+    return "\n".join([title, ""] + body).strip()
 
 
 def generate(cli, prompt, title, timeout=300):

@@ -75,9 +75,10 @@ def rebuild(original, translated_lines, title):
     result, it = [], iter(translated_lines)
     for line in original.splitlines():
         if not line.strip():
-            result.append("")
+            # Daftar ditulis rapat; satu-satunya baris kosong ada setelah judul.
+            continue
         elif TITLE_RE.match(line):
-            result.append(title)
+            result += [title, ""]
         else:
             indent = line[: len(line) - len(line.lstrip())]
             result.append(indent + next(it, line.strip()))

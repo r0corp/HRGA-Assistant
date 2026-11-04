@@ -125,6 +125,14 @@ def parse_day(text):
         return None
 
 
+def compact_report(text):
+    """Report ditulis rapat: tanpa baris kosong antar nomor, hanya satu setelah judul."""
+    lines = [l.rstrip() for l in (text or "").splitlines() if l.strip()]
+    if lines and lines[0].lower().startswith("daily report"):
+        lines.insert(1, "")
+    return "\n".join(lines)
+
+
 def to_wa_number(phone):
     """0812... -> 62812...; nomor yang sudah berawalan 62 dibiarkan."""
     d = "".join(c for c in phone if c.isdigit())
@@ -937,7 +945,7 @@ class App:
         frame.pack(fill="both", expand=True)
         self.txt = tk.Text(frame, wrap="word", font=(FONT, 10), undo=True, relief="flat", bd=0,
                            bg=NOTE_BG, fg=TEXT, insertbackground=TEXT, selectbackground="#f6d5db",
-                           selectforeground=TEXT, padx=16, pady=12, spacing1=2, spacing3=3,
+                           selectforeground=TEXT, padx=16, pady=12, spacing1=0, spacing3=2,
                            highlightthickness=0)
         bar = ttk.Scrollbar(frame, orient="vertical", command=self.txt.yview)
         self.txt.configure(yscrollcommand=bar.set)
@@ -1190,7 +1198,7 @@ class App:
             self._show_chats({})
         try:
             with open(report_path(day), encoding="utf-8") as f:
-                text = f.read()
+                text = compact_report(f.read())
         except OSError:
             text = ""
         self._loading = True
@@ -1587,6 +1595,7 @@ class App:
         self._run(self.tr("claude_waiting_login"), work)
 
     def _set_draft(self, day, text):
+        text = compact_report(text)
         settings.ensure_dirs()
         with open(report_path(day), "w", encoding="utf-8") as f:
             f.write(text)
