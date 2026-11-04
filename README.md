@@ -2,7 +2,7 @@
 
 App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report dengan Claude, lalu kirim ke grup tim.
 
-![Tampilan utama](docs/screenshot.png)
+![Tampilan utama](docs/main-1.1.0.png)
 
 ## Fitur
 
@@ -21,7 +21,7 @@ App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report den
 - **Jalan otomatis:** app bisa dibuka otomatis setiap Windows menyala.
 - **Update otomatis:** app mengecek rilis baru di GitHub saat dibuka. Bisa juga dicek manual di Pengaturan > Cek update.
 
-![Pengaturan](docs/screenshot-settings.png)
+![Pengaturan](docs/settings-1.1.0.png)
 
 ## Instalasi
 
