@@ -105,6 +105,10 @@ def login(cli):
                             creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
 
 
+def logout(cli):
+    subprocess.run([cli, "auth", "logout"], capture_output=True, text=True, timeout=30, creationflags=NO_WINDOW)
+
+
 def chat_transcript(chats, day, start_hour, end_hour, me="Saya"):
     """Chat terpilih -> teks ringkas untuk Claude, sudah disaring dan disamarkan."""
     parts = []

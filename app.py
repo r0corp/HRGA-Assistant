@@ -6,6 +6,7 @@ import os
 import calendar
 import queue
 import re
+import shutil
 import sys
 import threading
 import tkinter as tk
@@ -382,9 +383,13 @@ class SettingsDialog(tk.Toplevel):
 
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=20, pady=16)
+        left = tk.Frame(body, bg=BG, width=330)
+        left.pack(side="left", fill="y", anchor="n")
+        right = tk.Frame(body, bg=BG, width=330)
+        right.pack(side="left", fill="y", anchor="n", padx=(16, 0))
 
         # Umum: identitas, bahasa, autostart.
-        box = self._group(body, tr("general"))
+        box = self._group(left, tr("general"))
         self._field(box, tr("name"), ttk.Entry(box, textvariable=self.v_name, width=40))
         self._field(box, tr("language"), ttk.Combobox(box, textvariable=self.v_lang, values=list(LANGS.values()),
                                                       state="readonly", width=14))
@@ -392,7 +397,8 @@ class SettingsDialog(tk.Toplevel):
             anchor="w", pady=(6, 0))
 
         # WhatsApp: nomor, grup report, jam kerja, chat yang diabaikan.
-        box = self._group(body, tr("whatsapp"))
+        box = self._group(right, tr("whatsapp"))
+        self._account_row(box, app.wa_state is True, tr("wa_on"), tr("wa_off"), tr("wa_login"), self._relogin)
         self._field(box, tr("phone"), ttk.Entry(box, textvariable=self.v_phone, width=40))
         self._field(box, tr("group"), label(box, settings.REPORT_GROUP, 10, TEXT, True), tr("group_hint"))
         row = tk.Frame(box, bg=CARD)
@@ -410,10 +416,19 @@ class SettingsDialog(tk.Toplevel):
                                padx=6, pady=4, wrap="word")
         self.routine.insert("1.0", "\n".join(cfg["routine"]))
         self._field(box, tr("routine"), self.routine, tr("routine_hint"))
-        FlatButton(box, tr("relogin"), self._relogin, small=True).pack(anchor="w", pady=(8, 0))
+
+        # Claude AI: status login akun Claude di laptop ini.
+        box = self._group(left, tr("claude_section"))
+        if app.claude_state == "missing":
+            label(box, tr("claude_missing"), 9, MUTED).pack(anchor="w")
+            label(box, tr("claude_install_hint"), 8, MUTED, wraplength=280, justify="left").pack(anchor="w", pady=(4, 0))
+        else:
+            self._account_row(box, app.claude_state == "on", tr("claude_on"), tr("claude_off"),
+                              tr("claude_login"), self._claude_login)
+            label(box, tr("claude_hint"), 8, MUTED, wraplength=280, justify="left").pack(anchor="w", pady=(8, 0))
 
         # Tentang: versi dan update.
-        box = self._group(body, tr("about"))
+        box = self._group(left, tr("about"))
         row = tk.Frame(box, bg=CARD)
         row.pack(fill="x")
         label(row, f"{settings.APP_NAME}  ·  " + tr("version", v=updater.VERSION), 9, MUTED).pack(side="left")
@@ -422,6 +437,7 @@ class SettingsDialog(tk.Toplevel):
 
         foot = tk.Frame(self, bg=BG)
         foot.pack(fill="x", padx=20, pady=(0, 16))
+        FlatButton(foot, "\u23fb  " + tr("logout_all"), self._logout_all, "ghost").pack(side="left")
         FlatButton(foot, tr("save"), self._save, "primary").pack(side="right")
         FlatButton(foot, tr("cancel"), self.destroy).pack(side="right", padx=(0, 8))
 
@@ -474,6 +490,30 @@ class SettingsDialog(tk.Toplevel):
         if self._read():
             self.destroy()
             self.app.refresh()
+
+    def _account_row(self, box, on, on_text, off_text, login_text, login_cmd):
+        """Baris status akun (titik hijau/merah) dengan tombol Login."""
+        row = tk.Frame(box, bg=CARD)
+        row.pack(fill="x", pady=(0, 8))
+        dot = tk.Canvas(row, width=10, height=10, bg=CARD, highlightthickness=0)
+        dot.pack(side="left", padx=(0, 6))
+        color = GREEN if on else RED
+        dot.create_oval(1, 1, 9, 9, fill=color, outline=color)
+        label(row, on_text if on else off_text, 9, TEXT).pack(side="left")
+        FlatButton(row, login_text, login_cmd, "primary" if not on else "secondary", small=True).pack(side="right")
+
+    def _logout_all(self):
+        if self.app.busy:
+            return
+        if messagebox.askyesno(settings.APP_NAME, self.app.tr("confirm_logout_all"), parent=self):
+            self.destroy()
+            self.app.on_logout_all()
+
+    def _claude_login(self):
+        if self._read():
+            self.destroy()
+            self.app.refresh()
+            self.app._claude_login(then=None)
 
     def _relogin(self):
         if self._read():
@@ -1106,6 +1146,23 @@ class App:
             self.events.put(("claude", "on" if ok else "off"))
 
         threading.Thread(target=target, daemon=True).start()
+
+    def on_logout_all(self):
+        """Logout WhatsApp (hapus profil browser app) dan akun Claude sekaligus."""
+        # Sesi WhatsApp Web tersimpan di profil browser app; menghapusnya = logout dari app ini.
+        shutil.rmtree(settings.PROFILE_DIR, ignore_errors=True)
+        self.wa_state = False
+        self._show_wa_state()
+        if self.claude_cli and self.claude_state == "on":
+            try:
+                claude_ai.logout(self.claude_cli)
+            except Exception as e:
+                log.warning("Logout Claude gagal: %s", e)
+            self.claude_state = "off"
+            self._show_claude_state()
+        self._show_progress((100, self.tr("logout_all"), "", "done"))
+        self.status.set(self.tr("logged_out_all"))
+        messagebox.showinfo(settings.APP_NAME, self.tr("logged_out_all"))
 
     def on_claude_click(self):
         if self.claude_state == "off" and not self.busy:

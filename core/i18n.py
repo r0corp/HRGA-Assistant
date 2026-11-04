@@ -19,6 +19,14 @@ MONTHS = {
 
 TEXT = {
     "id": {
+        "wa_login": "Login",
+        "logout_all": "Logout semua akun",
+        "confirm_logout_all": "Logout WhatsApp dan Claude dari app ini? Untuk memakai app lagi, scan QR WhatsApp dan login Claude ulang.",
+        "logged_out_all": "Semua akun sudah logout. Hapus juga perangkat ini di HP: WhatsApp > Perangkat tertaut.",
+        "claude_section": "Claude AI",
+        "claude_login": "Login",
+        "claude_hint": "Pakai akun langganan Claude (Pro/Team), tanpa biaya tambahan. Dipakai saat Generate Report.",
+        "claude_install_hint": "Pasang aplikasi Claude desktop dari claude.ai/download, lalu buka ulang app ini.",
         "claude_on": "Claude terhubung",
         "claude_off": "Claude belum login",
         "claude_missing": "Claude tidak terpasang",
@@ -143,6 +151,14 @@ TEXT = {
         "failed": "Gagal: ",
     },
     "en": {
+        "wa_login": "Log in",
+        "logout_all": "Log out all accounts",
+        "confirm_logout_all": "Log WhatsApp and Claude out of this app? To use the app again, scan the WhatsApp QR code and log in to Claude again.",
+        "logged_out_all": "All accounts are logged out. Also remove this device on your phone: WhatsApp > Linked devices.",
+        "claude_section": "Claude AI",
+        "claude_login": "Log in",
+        "claude_hint": "Uses your Claude subscription (Pro/Team), no extra cost. Used when generating the report.",
+        "claude_install_hint": "Install the Claude desktop app from claude.ai/download, then reopen this app.",
         "claude_on": "Claude connected",
         "claude_off": "Claude not logged in",
         "claude_missing": "Claude not installed",
