@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import calendar
 import queue
 import re
 import sys
@@ -16,7 +17,7 @@ import sv_ttk
 import time
 
 from core import autostart, claude_ai, history, settings, updater
-from core.i18n import DAYS, DAYS_SHORT, LANGS, t
+from core.i18n import DAYS, DAYS_SHORT, LANGS, MONTHS, t
 from core.pdf import save_pdf
 from core.reader import WhatsApp, is_self_chat
 from core.summary import build_report, in_window, report_title
@@ -287,6 +288,78 @@ class ChatTable(tk.Frame):
         return [n for n, on in self.picked.items() if not on]
 
 
+class CalendarPopup(tk.Toplevel):
+    """Kalender dropdown di bawah kolom tanggal; klik tanggal untuk memilih."""
+
+    def __init__(self, anchor, selected, lang, on_pick):
+        super().__init__(anchor, bg=BORDER)
+        self.overrideredirect(True)
+        self.lang, self.on_pick = lang, on_pick
+        self.selected = selected or date.today()
+        self.month = self.selected.replace(day=1)
+
+        self.body = tk.Frame(self, bg=CARD, padx=10, pady=10)
+        self.body.pack(padx=1, pady=1)
+        self._draw()
+
+        anchor.update_idletasks()
+        self.geometry(f"+{anchor.winfo_rootx()}+{anchor.winfo_rooty() + anchor.winfo_height() + 4}")
+        # Tutup saat klik di luar kalender atau tekan Esc.
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<FocusOut>", lambda e: self.after(150, self._close_if_unfocused))
+        self.focus_force()
+
+    def _close_if_unfocused(self):
+        if self.winfo_exists() and self.focus_get() is None:
+            self.destroy()
+
+    def _shift(self, months):
+        y, m = divmod(self.month.month - 1 + months, 12)
+        self.month = date(self.month.year + y, m + 1, 1)
+        self._draw()
+
+    def _draw(self):
+        for w in self.body.winfo_children():
+            w.destroy()
+
+        head = tk.Frame(self.body, bg=CARD)
+        head.grid(row=0, column=0, columnspan=7, sticky="we", pady=(0, 6))
+        nav = dict(bg=CARD, fg=TEXT, font=(FONT, 12), cursor="hand2", padx=6)
+        prev = tk.Label(head, text="\u2039", **nav)
+        prev.pack(side="left")
+        prev.bind("<Button-1>", lambda e: self._shift(-1))
+        nxt = tk.Label(head, text="\u203a", **nav)
+        nxt.pack(side="right")
+        nxt.bind("<Button-1>", lambda e: self._shift(1))
+        tk.Label(head, text=f"{MONTHS[self.lang][self.month.month - 1]} {self.month.year}",
+                 bg=CARD, fg=TEXT, font=(FONT, 10, "bold")).pack()
+
+        for col, name in enumerate(DAYS_SHORT[self.lang]):
+            tk.Label(self.body, text=name, bg=CARD, fg=RED if col >= 5 else MUTED, font=(FONT, 8, "bold"),
+                     width=4).grid(row=1, column=col, pady=(0, 2))
+
+        today = date.today()
+        weeks = calendar.Calendar(firstweekday=0).monthdatescalendar(self.month.year, self.month.month)
+        for row, week in enumerate(weeks, start=2):
+            for col, d in enumerate(week):
+                picked = d == self.selected
+                bg = RED if picked else CARD
+                fg = "white" if picked else (TEXT if d.month == self.month.month else "#c0c4ca")
+                cell = tk.Label(self.body, text=str(d.day), bg=bg, fg=fg, width=4, pady=4, cursor="hand2",
+                                font=(FONT, 9, "bold" if d == today or picked else "normal"))
+                if d == today and not picked:
+                    cell.configure(fg=RED)
+                cell.grid(row=row, column=col, padx=1, pady=1)
+                cell.bind("<Button-1>", lambda e, d=d: self._pick(d))
+                if not picked:
+                    cell.bind("<Enter>", lambda e, c=cell: c.configure(bg="#f6d5db"))
+                    cell.bind("<Leave>", lambda e, c=cell: c.configure(bg=CARD))
+
+    def _pick(self, d):
+        self.on_pick(d)
+        self.destroy()
+
+
 # ---------- jendela pengaturan ----------
 
 class SettingsDialog(tk.Toplevel):
@@ -448,6 +521,8 @@ class App:
 
         self.v_date = tk.StringVar(value=fmt_day(date.today(), self.cfg["lang"]))
         self.status = tk.StringVar()
+        # Pesan status (mis. "Report disalin") tampil di panel progres saat tidak ada proses berjalan.
+        self.status.trace_add("write", lambda *_: self._status_to_panel())
 
         self._build()
         self._load_saved(date.today())
@@ -492,7 +567,6 @@ class App:
         self._build_sidebar()
         main = tk.Frame(self.root, bg=BG)
         main.pack(side="left", fill="both", expand=True)
-        self._build_statusbar(main)
         self._build_topbar(main)
         self._build_timeline(main)
 
@@ -552,7 +626,10 @@ class App:
 
         # Tanggal report dan dua tombol utama.
         label(inner, self.tr("report_date").upper(), 8, MUTED, True).pack(anchor="w", pady=(20, 4))
-        ttk.Entry(inner, textvariable=self.v_date).pack(fill="x")
+        # Kolom tanggal: klik untuk membuka kalender dropdown.
+        entry = ttk.Entry(inner, textvariable=self.v_date, state="readonly", cursor="hand2")
+        entry.pack(fill="x")
+        entry.bind("<Button-1>", lambda e: self._open_calendar(entry))
         row = tk.Frame(inner, bg=SIDE)
         row.pack(fill="x", pady=(6, 0))
         FlatButton(row, self.tr("today"), lambda: self._set_day(0), small=True).pack(side="left", fill="x", expand=True)
@@ -571,7 +648,7 @@ class App:
         body = box.body
         row = tk.Frame(body, bg=CARD)
         row.pack(fill="x", padx=12, pady=(10, 0))
-        self.prog_text = label(row, "", 9, TEXT, anchor="w")
+        self.prog_text = label(row, "", 9, TEXT, anchor="w", wraplength=105, justify="left")
         self.prog_text.pack(side="left", fill="x", expand=True)
         self.prog_pct = label(row, "", 9, TEXT, True)
         self.prog_pct.pack(side="right")
@@ -684,11 +761,6 @@ class App:
         bar.pack(side="right", fill="y")
         self.txt.pack(side="left", fill="both", expand=True)
 
-    def _build_statusbar(self, main):
-        bar = tk.Frame(main, bg=BG)
-        bar.pack(fill="x", side="bottom", padx=24, pady=(0, 10))
-        label(bar, "", 9, MUTED, textvariable=self.status).pack(side="left")
-
     def _show_claude_state(self):
         color, key = {
             "on": (GREEN, "claude_on"),
@@ -731,6 +803,12 @@ class App:
 
     # ---------- utilitas ----------
 
+    def _status_to_panel(self):
+        if not self.busy and hasattr(self, "prog_note") and self.prog_note.winfo_exists():
+            text = self.status.get()
+            # "Siap." sudah tampil sebagai judul panel saat belum ada proses.
+            self.prog_note.configure(text="" if text == self.tr("ready") else text)
+
     def _show_progress(self, state):
         """state: None, atau (persen, judul, keterangan, "run"/"done"/"error")."""
         self.prog_state = state
@@ -751,6 +829,13 @@ class App:
     def _progress(self, pct, note=""):
         """Dipanggil dari thread kerja: perbarui persentase panel progres."""
         self.events.put(("progress", (int(pct), note)))
+
+    def _open_calendar(self, entry):
+        if getattr(self, "calendar", None) and self.calendar.winfo_exists():
+            self.calendar.destroy()
+            return
+        self.calendar = CalendarPopup(entry, parse_day(self.v_date.get()), self.lang,
+                                      lambda d: self.v_date.set(fmt_day(d, self.lang)))
 
     def _set_day(self, back):
         self.v_date.set(fmt_day(date.today() - timedelta(days=back), self.lang))
@@ -835,7 +920,8 @@ class App:
                 elif kind == "finish":
                     if self.prog_state:
                         pct, title, note, _ = self.prog_state
-                        self._show_progress((100, title, "", "done") if value else (pct, title, note, "error"))
+                        self._show_progress((100, title, self.status.get(), "done") if value
+                                            else (pct, title, note, "error"))
                 elif kind == "done":
                     self._set_busy(False)
         except queue.Empty:
