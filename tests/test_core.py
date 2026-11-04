@@ -2,7 +2,7 @@ from datetime import date
 
 from app import to_wa_number
 from core.reader import is_self_chat
-from core.summary import build_report, is_meaningful, key_messages, report_title
+from core.summary import build_report, is_meaningful, report_title
 
 
 DAY = date(2026, 11, 4)
@@ -23,37 +23,57 @@ def test_basa_basi_dan_lampiran_dibuang():
     assert is_meaningful("tolong cek printer lantai 2 tidak bisa print")
 
 
-def test_pesan_kunci_permintaan_dan_jawaban():
-    msgs = [
-        msg("08:00", "pagi pak"),
-        msg("08:01", "printer lantai 2 error kertas macet terus"),
-        msg("08:05", "ok", out=True),
-        msg("08:30", "sudah saya bersihkan rollernya dan sudah bisa print", out=True),
-        msg("08:31", "makasih"),
-    ]
-    picked = key_messages(msgs)
-    assert [m["time"][11:] for m in picked] == ["08:01", "08:30"]
-
-
-def test_report_hanya_jam_kerja_dan_urut_pagi():
+def test_report_dikelompokkan_per_jenis_pekerjaan():
     chats = {
-        "Grup HRGA": [msg("10:00", "rapat evaluasi vendor kebersihan jam 2 siang", sender="Rina")],
-        "Andi": [
-            msg("05:30", "ini sebelum jam kerja jangan dihitung"),
-            msg("08:15", "form pengajuan ATK minggu ini sudah saya kirim"),
-            msg("17:30", "ini setelah jam kerja jangan dihitung juga"),
+        "TCI Rama": [
+            msg("08:30", "masih ada issue di sharepointnya?", out=True),
+            msg("08:41", "aman mas, udh gada notif storage full", sender="TCI Rama"),
         ],
-        "Keluarga": [msg("18:00", "nanti malam makan di luar ya", sender="Ibu")],
+        "TCI Deden": [
+            msg("08:42", "ada issue lagi kah untuk sharepointnya?", out=True),
+            msg("09:06", "sejauh ini sih aman mas", sender="TCI Deden"),
+        ],
+        "TCI Annisa": [
+            msg("10:48", "mas printer kyoceranya bermasalah lagi", sender="TCI Annisa"),
+            msg("10:56", "itu kaya error kertas habis", out=True),
+        ],
+    }
+    lines = build_report(chats, DAY, "Sari", 6, 17).splitlines()
+
+    assert lines[2] == "1. Penanganan storage SharePoint/OneDrive:"
+    assert lines[3].startswith("- Rama: ") and lines[3].endswith("; selesai.")
+    assert lines[4].startswith("- Deden: ") and lines[4].endswith("; selesai.")
+    assert lines[5].startswith("2. Penanganan printer dan scan (Annisa): mas printer kyoceranya bermasalah lagi")
+
+
+def test_report_hanya_jam_kerja():
+    chats = {
+        "Andi": [
+            msg("05:30", "printer sebelum jam kerja jangan dihitung"),
+            msg("08:15", "form pengajuan ATK minggu ini sudah saya kirim"),
+            msg("17:30", "printer setelah jam kerja jangan dihitung juga"),
+        ],
     }
     text = build_report(chats, DAY, "Sari", 6, 17)
-    lines = text.splitlines()
-
-    assert lines[0] == "Daily Report Rabu/04 November 2026 (Sari)."
-    assert lines[2] == "1. Andi (08:15):"
-    assert lines[3] == "- Andi: form pengajuan ATK minggu ini sudah saya kirim"
-    assert lines[4] == "2. Grup HRGA (10:00):"
     assert "jangan dihitung" not in text
-    assert "Keluarga" not in text
+    assert "(Andi): form pengajuan ATK minggu ini sudah saya kirim" in text
+
+
+def test_chat_pribadi_dan_ucapan_duka_dibuang():
+    chats = {
+        "Keluarga": [msg("12:00", "nanti malam makan di rumah ya", sender="Ibu")],
+        "TCI Tarisa": [msg("07:10", "innalillahi turut berduka cita ya mas", sender="TCI Tarisa")],
+    }
+    assert "Tidak ada chat kerja" in build_report(chats, DAY)
+
+
+def test_item_rutin_diselipkan():
+    routine = ["Cek rutin APAR lantai 1 dan 2."]
+    chats = {"Andi": [msg("08:15", "form pengajuan ATK minggu ini sudah saya kirim")]}
+    text = build_report(chats, DAY, routine=routine)
+    assert "Cek rutin APAR lantai 1 dan 2." in text
+    # Posisi acaknya tetap sama untuk tanggal yang sama.
+    assert text == build_report(chats, DAY, routine=routine)
 
 
 def test_password_disamarkan():
@@ -62,9 +82,8 @@ def test_password_disamarkan():
 
 
 def test_link_diringkas_jadi_nama_situs():
-    chats = {"Rina": [msg("09:00", "ini link kabelnya https://www.shopee.co.id/CORDE-i.3677.a1b2c3?x=1%20y mba", out=True)]}
-    text = build_report(chats, DAY)
-    assert "- Saya: ini link kabelnya [link shopee.co.id] mba" in text
+    chats = {"Rina": [msg("09:00", "mba ini link kabel untuk pengajuan https://www.shopee.co.id/CORDE-i.3677?x=1 ya")]}
+    assert "[link shopee.co.id]" in build_report(chats, DAY)
 
 
 def test_report_kosong():
@@ -72,11 +91,19 @@ def test_report_kosong():
 
 
 def test_report_bahasa_inggris():
-    chats = {"Andi": [msg("08:15", "sudah saya kirim form pengajuan ATK", out=True)]}
+    chats = {"Andi": [msg("08:15", "form pengajuan ATK sudah saya kirim")]}
     lines = build_report(chats, DAY, "Sari", lang="en").splitlines()
     assert lines[0] == "Daily Report Wednesday/04 November 2026 (Sari)."
-    assert lines[3] == "- Me: sudah saya kirim form pengajuan ATK"
+    assert lines[2].startswith("1. Stationery and stock management (Andi): ")
     assert "No work chats" in build_report({}, DAY, lang="en")
+
+
+def test_format_tanggal_report():
+    from app import fmt_day, parse_day
+    assert fmt_day(date(2026, 11, 3), "id") == "Selasa / 03-11-2026"
+    assert parse_day("Selasa / 03-11-2026") == date(2026, 11, 3)
+    assert parse_day("2026-11-03") == date(2026, 11, 3)
+    assert parse_day("kemarin") is None
 
 
 def test_pdf_dengan_kop(tmp_path):
@@ -137,3 +164,29 @@ def test_grup_report_selalu_grup_team_hrga(tmp_path, monkeypatch):
     f.write_text(_json.dumps({"group": "Grup Lain"}), encoding="utf-8")
     monkeypatch.setattr(settings, "SETTINGS_FILE", str(f))
     assert settings.load()["group"] == "GRUP TEAM HRGA"
+
+
+def test_prompt_claude_hanya_chat_jam_kerja_dan_tersamarkan():
+    from core.claude_ai import build_prompt
+    chats = {
+        "TCI Budi": [
+            msg("05:00", "sebelum jam kerja jangan masuk"),
+            msg("08:10", "password wifi: Rahasia2026x tolong cek printer", sender="TCI Budi"),
+            msg("08:20", "sudah saya cek, printer normal", out=True),
+            msg("08:21", "Photo", sender="TCI Budi"),
+            msg("08:22", "turut berduka cita ya", sender="TCI Budi"),
+        ],
+    }
+    p = build_prompt(chats, DAY, "Sari", 6, 17, "id", ["Cek rutin APAR."])
+    assert "Daily Report Rabu/04 November 2026 (Sari)." in p
+    assert "[08:20] Saya: sudah saya cek, printer normal" in p
+    assert "Rahasia2026x" not in p
+    assert "sebelum jam kerja" not in p and "Photo" not in p and "berduka" not in p
+    assert "Cek rutin APAR." in p
+
+
+def test_jawaban_claude_dirapikan():
+    from core.claude_ai import tidy
+    title = "Daily Report Rabu/04 November 2026 (Sari)."
+    raw = "Berikut report-nya:\n\n**Daily Report Rabu/4 Nov 2026**\n\n1. **Penanganan printer**: normal."
+    assert tidy(raw, title) == title + "\n\n1. Penanganan printer: normal."

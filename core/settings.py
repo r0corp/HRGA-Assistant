@@ -27,6 +27,8 @@ DEFAULTS = {
     "start_hour": 6,
     "end_hour": 17,
     "lang": "id",
+    # Pekerjaan rutin harian yang selalu masuk report, diselipkan di nomor acak.
+    "routine": [],
     # Nama chat yang tidak pernah dibaca, mis. chat keluarga.
     "exclude": [],
 }

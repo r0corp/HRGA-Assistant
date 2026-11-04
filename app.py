@@ -4,19 +4,22 @@ import json
 import logging
 import os
 import queue
+import re
 import sys
 import threading
 import tkinter as tk
 from datetime import date, datetime, timedelta
-from tkinter import messagebox, ttk
+from tkinter import font as tkfont, messagebox, ttk
 
 import sv_ttk
 
-from core import autostart, history, settings, updater
-from core.i18n import DAYS_SHORT, LANGS, t
+import time
+
+from core import autostart, claude_ai, history, settings, updater
+from core.i18n import DAYS, DAYS_SHORT, LANGS, t
 from core.pdf import save_pdf
 from core.reader import WhatsApp, is_self_chat
-from core.summary import build_report, in_window
+from core.summary import build_report, in_window, report_title
 
 
 log = logging.getLogger("app")
@@ -49,6 +52,23 @@ def report_path(day, ext="txt"):
     return os.path.join(settings.REPORTS_DIR, f"{day.isoformat()}.{ext}")
 
 
+def fmt_day(d, lang):
+    """date -> "Selasa / 03-11-2026"."""
+    return f"{DAYS[lang][d.weekday()]} / {d:%d-%m-%Y}"
+
+
+def parse_day(text):
+    """ "Selasa / 03-11-2026", "03-11-2026", atau "2026-11-03" -> date; None kalau tidak valid."""
+    text = text.strip()
+    m = re.search(r"(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})", text)
+    try:
+        if m:
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
 def to_wa_number(phone):
     """0812... -> 62812...; nomor yang sudah berawalan 62 dibiarkan."""
     d = "".join(c for c in phone if c.isdigit())
@@ -57,30 +77,80 @@ def to_wa_number(phone):
 
 # ---------- komponen ----------
 
-class FlatButton(tk.Button):
-    """Tombol datar: "primary" merah, "secondary" putih bergaris, "ghost" tanpa garis."""
+def rounded_rect(canvas, x1, y1, x2, y2, r, **kw):
+    """Persegi panjang bersudut bulat di canvas (poligon smooth)."""
+    r = min(r, (x2 - x1) / 2, (y2 - y1) / 2)
+    pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
+           x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+    return canvas.create_polygon(pts, smooth=True, **kw)
+
+
+class FlatButton(tk.Canvas):
+    """Tombol bersudut bulat: "primary" merah, "secondary" putih bergaris, "ghost" tanpa garis.
+
+    Digambar di canvas karena tk.Button tidak bisa bersudut bulat. Mendukung
+    configure(state="disabled"/"normal") seperti tombol biasa.
+    """
 
     COLORS = {
-        "primary": (RED, "white", RED_DARK),
-        "secondary": (CARD, TEXT, "#f1f3f5"),
-        "ghost": (None, RED, None),
+        # (isi, teks, isi saat hover, garis tepi)
+        "primary": (RED, "white", RED_DARK, RED),
+        "secondary": (CARD, TEXT, "#f1f3f5", BORDER),
+        "ghost": (None, RED, None, None),
     }
 
-    def __init__(self, parent, text, command, kind="secondary", small=False, **kw):
-        bg, fg, hover = self.COLORS[kind]
-        bg = bg or parent["bg"]
-        hover = hover or bg
-        super().__init__(
-            parent, text=text, command=command, bg=bg, fg=fg,
-            activebackground=hover, activeforeground=fg, disabledforeground="#b0b4ba",
-            relief="flat", bd=0, cursor="hand2",
-            font=(FONT, 9 if small else 10, "bold" if kind == "primary" else "normal"),
-            padx=10 if small else 14, pady=4 if small else 8,
-            highlightthickness=1 if kind == "secondary" else 0,
-            highlightbackground=BORDER, highlightcolor=BORDER, **kw,
-        )
-        self.bind("<Enter>", lambda e: str(self["state"]) != "disabled" and self.configure(bg=hover))
-        self.bind("<Leave>", lambda e: self.configure(bg=bg))
+    def __init__(self, parent, text, command, kind="secondary", small=False, anchor="center", **kw):
+        self.fill, self.fg, self.hover_fill, self.edge = self.COLORS[kind]
+        self.fill = self.fill or parent["bg"]
+        self.hover_fill = self.hover_fill or self.fill
+        self.edge = self.edge or self.fill
+        self.text, self.command, self.anchor = text, command, anchor
+        self.font = tkfont.Font(family=FONT, size=9 if small else 10, weight="bold" if kind == "primary" else "normal")
+        self.padx = 10 if small else 14
+        height = self.font.metrics("linespace") + (10 if small else 18)
+        width = self.font.measure(text) + 2 * self.padx
+        super().__init__(parent, width=width, height=height, bg=parent["bg"],
+                         highlightthickness=0, bd=0, cursor="hand2", **kw)
+        self.state_ = "normal"
+        self.hovered = False
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Enter>", lambda e: self._hover(True))
+        self.bind("<Leave>", lambda e: self._hover(False))
+        self.bind("<ButtonRelease-1>", self._click)
+
+    def _draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4 or h < 4:
+            return
+        disabled = self.state_ == "disabled"
+        fill = self.hover_fill if self.hovered and not disabled else self.fill
+        rounded_rect(self, 1, 1, w - 2, h - 2, 9, fill=fill, outline=self.edge, width=1)
+        fg = "#b0b4ba" if disabled and self.fg != "white" else self.fg
+        if disabled and self.fg == "white":
+            fg = "#f3c3cb"
+        x = self.padx if self.anchor == "w" else w / 2
+        self.create_text(x, h / 2, text=self.text, fill=fg, font=self.font,
+                         anchor="w" if self.anchor == "w" else "center")
+
+    def _hover(self, on):
+        self.hovered = on
+        self._draw()
+
+    def _click(self, e):
+        inside = 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height()
+        if self.state_ != "disabled" and inside and self.command:
+            self.command()
+
+    def configure(self, cnf=None, **kw):
+        if "state" in kw:
+            self.state_ = str(kw.pop("state"))
+            super().configure(cursor="arrow" if self.state_ == "disabled" else "hand2")
+            self._draw()
+        if cnf or kw:
+            return super().configure(cnf, **kw)
+
+    config = configure
 
 
 def label(parent, text, size=9, color=TEXT, bold=False, **kw):
@@ -88,8 +158,61 @@ def label(parent, text, size=9, color=TEXT, bold=False, **kw):
     return tk.Label(parent, text=text, fg=color, font=(FONT, size, "bold" if bold else "normal"), **kw)
 
 
-def card(parent):
-    return tk.Frame(parent, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
+class ProgressBar(tk.Canvas):
+    """Bar progres bersudut bulat: merah saat berjalan, hijau saat selesai."""
+
+    def __init__(self, parent, height=8):
+        super().__init__(parent, height=height, bg=parent["bg"], highlightthickness=0, bd=0)
+        self.value = 0
+        self.color = RED
+        self.bind("<Configure>", lambda e: self._draw())
+
+    def set(self, value, color=RED):
+        self.value, self.color = max(0, min(100, value)), color
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        rounded_rect(self, 0, 0, w - 1, h - 1, h / 2, fill=BORDER, outline=BORDER)
+        filled = (w - 1) * self.value / 100
+        if filled >= h:
+            rounded_rect(self, 0, 0, filled, h - 1, h / 2, fill=self.color, outline=self.color)
+
+
+class RoundCard(tk.Canvas):
+    """Kartu putih bersudut membulat dengan garis tepi tipis.
+
+    Isi kartu ditaruh di .body. Kartu yang tidak di-expand mengikuti tinggi
+    isinya; kartu yang di-expand mengikuti ukuran dari layout.
+    """
+
+    def __init__(self, parent, radius=12, expand=False, **kw):
+        super().__init__(parent, bg=parent["bg"], highlightthickness=0, bd=0, height=40, **kw)
+        self.radius = radius
+        self.expand = expand
+        self.inset = max(3, radius // 3)
+        self.body = tk.Frame(self, bg=CARD)
+        self._win = self.create_window(self.inset, self.inset, window=self.body, anchor="nw")
+        self.bind("<Configure>", self._redraw)
+        if not expand:
+            self.body.bind("<Configure>", self._fit)
+
+    def _fit(self, _e=None):
+        h = self.body.winfo_reqheight() + 2 * self.inset
+        if int(self["height"]) != h:
+            self.configure(height=h)
+
+    def _redraw(self, e):
+        w, h = e.width, e.height
+        self.delete("bg")
+        rounded_rect(self, 1, 1, w - 2, h - 2, self.radius, fill=CARD, outline=BORDER, width=1, tags="bg")
+        self.tag_lower("bg")
+        self.itemconfigure(self._win, width=max(w - 2 * self.inset, 1))
+        if self.expand:
+            self.itemconfigure(self._win, height=max(h - 2 * self.inset, 1))
 
 
 class ChatTable(tk.Frame):
@@ -209,6 +332,11 @@ class SettingsDialog(tk.Toplevel):
                                padx=6, pady=4, wrap="word")
         self.exclude.insert("1.0", "; ".join(cfg["exclude"]))
         self._field(box, tr("advanced"), self.exclude)
+        self.routine = tk.Text(box, height=3, width=40, font=(FONT, 9), relief="flat", bd=0,
+                               highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
+                               padx=6, pady=4, wrap="word")
+        self.routine.insert("1.0", "\n".join(cfg["routine"]))
+        self._field(box, tr("routine"), self.routine, tr("routine_hint"))
         FlatButton(box, tr("relogin"), self._relogin, small=True).pack(anchor="w", pady=(8, 0))
 
         # Tentang: versi dan update.
@@ -231,9 +359,9 @@ class SettingsDialog(tk.Toplevel):
 
     def _group(self, parent, title):
         label(parent, title.upper(), 8, MUTED, True).pack(anchor="w", pady=(6, 4))
-        box = card(parent)
+        box = RoundCard(parent)
         box.pack(fill="x", pady=(0, 8))
-        inner = tk.Frame(box, bg=CARD)
+        inner = tk.Frame(box.body, bg=CARD)
         inner.pack(fill="x", padx=14, pady=12)
         return inner
 
@@ -258,6 +386,7 @@ class SettingsDialog(tk.Toplevel):
             start_hour=start,
             end_hour=end,
             exclude=[s.strip() for s in self.exclude.get("1.0", "end").split(";") if s.strip()],
+            routine=[s.strip() for s in self.routine.get("1.0", "end").splitlines() if s.strip()],
             lang=lang,
         )
         settings.save(self.app.cfg)
@@ -292,7 +421,12 @@ class App:
         self.update_info = None
         # Status koneksi WhatsApp: None belum dicek, "checking", True, atau False.
         self.wa_state = None
+        # Status Claude: None belum dicek, "on", "off" (belum login), "missing" (tidak terpasang).
+        self.claude_state = None
+        self.claude_cli = None
         self.history = history.load(settings.HISTORY_FILE)
+        # Panel progres: None (belum ada proses) atau (persen, judul, keterangan, status).
+        self.prog_state = None
 
         root.title(settings.APP_NAME)
         root.geometry("1220x780")
@@ -312,7 +446,7 @@ class App:
         except tk.TclError:
             self.icon = self.logo = None
 
-        self.v_date = tk.StringVar(value=date.today().isoformat())
+        self.v_date = tk.StringVar(value=fmt_day(date.today(), self.cfg["lang"]))
         self.status = tk.StringVar()
 
         self._build()
@@ -320,6 +454,7 @@ class App:
         root.after(150, self._poll)
         # Saat app dibuka: cek koneksi WhatsApp (sekaligus riwayat report) dan versi baru.
         root.after(800, self.on_check_wa)
+        root.after(1000, self.check_claude)
         root.after(1500, lambda: self.on_check_update(silent=True))
 
     @property
@@ -334,13 +469,15 @@ class App:
     def _styles(self):
         s = ttk.Style()
         s.configure("Card.TCheckbutton", background=CARD, font=(FONT, 9))
-        s.configure("TProgressbar", thickness=4)
         s.configure("Chat.Treeview", rowheight=30, font=(FONT, 10), background=CARD, fieldbackground=CARD,
                     borderwidth=0)
         s.configure("Chat.Treeview.Heading", font=(FONT, 9, "bold"), foreground=MUTED)
 
     def refresh(self):
         """Bangun ulang jendela, mis. setelah bahasa atau pengaturan diganti."""
+        day = parse_day(self.v_date.get())
+        if day:
+            self.v_date.set(fmt_day(day, self.lang))
         self._build()
 
     def _build(self):
@@ -388,17 +525,30 @@ class App:
         tk.Frame(inner, bg=RED, height=3, width=56).pack(anchor="w", pady=(10, 18))
 
         # Status WhatsApp; klik untuk cek ulang.
-        pill = card(inner)
+        card_ = RoundCard(inner, radius=10)
+        card_.pack(fill="x")
+        pill = card_.body
         pill.configure(cursor="hand2")
-        pill.pack(fill="x")
         self.wa_dot = tk.Canvas(pill, width=12, height=12, bg=CARD, highlightthickness=0)
         self.wa_dot.pack(side="left", padx=(12, 8), pady=10)
         self.wa_label = label(pill, "", 9, TEXT, bg=CARD)
         self.wa_label.pack(side="left")
-        for w in (pill, self.wa_dot, self.wa_label):
+        for w in (card_, pill, self.wa_dot, self.wa_label):
             w.bind("<Button-1>", lambda e: self.on_check_wa())
         self.connect_slot = tk.Frame(inner, bg=SIDE)
         self.connect_slot.pack(fill="x")
+
+        card_ = RoundCard(inner, radius=10)
+        card_.pack(fill="x", pady=(8, 0))
+        pill = card_.body
+        pill.configure(cursor="hand2")
+        self.ai_dot = tk.Canvas(pill, width=12, height=12, bg=CARD, highlightthickness=0)
+        self.ai_dot.pack(side="left", padx=(12, 8), pady=10)
+        self.ai_label = label(pill, "", 9, TEXT, bg=CARD)
+        self.ai_label.pack(side="left")
+        for w in (card_, pill, self.ai_dot, self.ai_label):
+            w.bind("<Button-1>", lambda e: self.on_claude_click())
+        self._show_claude_state()
 
         # Tanggal report dan dua tombol utama.
         label(inner, self.tr("report_date").upper(), 8, MUTED, True).pack(anchor="w", pady=(20, 4))
@@ -414,6 +564,22 @@ class App:
         gen = FlatButton(inner, "✨  " + self.tr("generate"), self.on_generate, "primary")
         gen.pack(fill="x")
         self.buttons += [pull, gen]
+
+        # Panel progres: nama proses, persentase, lalu "Complete" saat selesai.
+        box = RoundCard(inner)
+        box.pack(fill="x", pady=(16, 0))
+        body = box.body
+        row = tk.Frame(body, bg=CARD)
+        row.pack(fill="x", padx=12, pady=(10, 0))
+        self.prog_text = label(row, "", 9, TEXT, anchor="w")
+        self.prog_text.pack(side="left", fill="x", expand=True)
+        self.prog_pct = label(row, "", 9, TEXT, True)
+        self.prog_pct.pack(side="right")
+        self.prog_bar = ProgressBar(body)
+        self.prog_bar.pack(fill="x", padx=12, pady=(6, 0))
+        self.prog_note = label(body, "", 8, MUTED, anchor="w", wraplength=200, justify="left")
+        self.prog_note.pack(fill="x", padx=12, pady=(4, 10))
+        self._show_progress(self.prog_state)
 
         # Bagian bawah sidebar: pengaturan, versi, banner update.
         foot = tk.Frame(inner, bg=SIDE)
@@ -433,8 +599,9 @@ class App:
 
     def _build_timeline(self, main):
         """Riwayat report ke grup untuk 5 hari kerja terakhir."""
-        box = card(main)
-        box.pack(fill="x", padx=24, pady=(0, 14))
+        card_ = RoundCard(main)
+        card_.pack(fill="x", padx=24, pady=(0, 14))
+        box = card_.body
         label(box, self.tr("timeline_title"), 10, TEXT, True, bg=CARD).pack(anchor="w", padx=16, pady=(12, 0))
         self.timeline = tk.Canvas(box, height=78, bg=CARD, highlightthickness=0)
         self.timeline.pack(fill="x", padx=10, pady=(0, 6))
@@ -482,16 +649,18 @@ class App:
         return head
 
     def _build_chats(self, cols):
-        box = card(cols)
-        box.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        card_ = RoundCard(cols, expand=True)
+        card_.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        box = card_.body
         head = self._card_header(box, self.tr("chats_title"), self.tr("chats_hint"))
         FlatButton(head, self.tr("ignore"), self.on_ignore, "ghost", small=True).pack(side="right")
         self.table = ChatTable(box, (self.tr("col_chat"), self.tr("col_msgs"), self.tr("col_time")))
-        self.table.pack(fill="both", expand=True, padx=1, pady=(0, 1))
+        self.table.pack(fill="both", expand=True, padx=6, pady=(0, 8))
 
     def _build_draft(self, cols):
-        box = card(cols)
-        box.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        card_ = RoundCard(cols, expand=True)
+        card_.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        box = card_.body
         head = self._card_header(box, self.tr("draft_title"), self.tr("draft_hint"))
         has_group = bool(self.cfg["group"])
         send = FlatButton(head, self.tr("send_group" if has_group else "send"),
@@ -505,7 +674,7 @@ class App:
 
         tk.Frame(box, bg=BORDER, height=1).pack(fill="x")
         frame = tk.Frame(box, bg=CARD)
-        frame.pack(fill="both", expand=True)
+        frame.pack(fill="both", expand=True, padx=(0, 6), pady=(0, 8))
         self.txt = tk.Text(frame, wrap="word", font=(FONT, 10), undo=True, relief="flat", bd=0,
                            bg=CARD, fg=TEXT, insertbackground=TEXT, selectbackground="#f6d5db",
                            selectforeground=TEXT, padx=18, pady=14, spacing1=2, spacing3=3,
@@ -518,8 +687,17 @@ class App:
     def _build_statusbar(self, main):
         bar = tk.Frame(main, bg=BG)
         bar.pack(fill="x", side="bottom", padx=24, pady=(0, 10))
-        self.progress = ttk.Progressbar(bar, mode="indeterminate", length=160)
         label(bar, "", 9, MUTED, textvariable=self.status).pack(side="left")
+
+    def _show_claude_state(self):
+        color, key = {
+            "on": (GREEN, "claude_on"),
+            "off": (AMBER, "claude_off"),
+            "missing": ("#a0a4aa", "claude_missing"),
+        }.get(self.claude_state, ("#a0a4aa", "claude_checking"))
+        self.ai_dot.delete("all")
+        self.ai_dot.create_oval(1, 1, 11, 11, fill=color, outline=color)
+        self.ai_label.configure(text=self.tr(key))
 
     def _show_wa_state(self):
         color, key = {
@@ -553,27 +731,45 @@ class App:
 
     # ---------- utilitas ----------
 
+    def _show_progress(self, state):
+        """state: None, atau (persen, judul, keterangan, "run"/"done"/"error")."""
+        self.prog_state = state
+        if not state:
+            self.prog_text.configure(text=self.tr("ready"))
+            self.prog_pct.configure(text="")
+            self.prog_note.configure(text="")
+            self.prog_bar.set(0)
+            return
+        pct, title, note, kind = state
+        color = {"done": GREEN, "error": RED}.get(kind, TEXT)
+        text = {"done": "Complete \u2713", "error": self.tr("failed").rstrip(": ")}.get(kind, f"{pct}%")
+        self.prog_text.configure(text=title)
+        self.prog_pct.configure(text=text, fg=color)
+        self.prog_note.configure(text=note)
+        self.prog_bar.set(pct, GREEN if kind == "done" else RED)
+
+    def _progress(self, pct, note=""):
+        """Dipanggil dari thread kerja: perbarui persentase panel progres."""
+        self.events.put(("progress", (int(pct), note)))
+
     def _set_day(self, back):
-        self.v_date.set((date.today() - timedelta(days=back)).isoformat())
+        self.v_date.set(fmt_day(date.today() - timedelta(days=back), self.lang))
 
     def _set_busy(self, on):
         self.busy = on
         for b in self.buttons:
             if b.winfo_exists():
                 b.configure(state="disabled" if on else "normal")
-        if on:
-            self.progress.pack(side="right")
-            self.progress.start(12)
-        else:
-            self.progress.stop()
-            self.progress.pack_forget()
+
 
     def _read_day(self):
-        try:
-            return date.fromisoformat(self.v_date.get().strip())
-        except ValueError:
+        day = parse_day(self.v_date.get())
+        if day is None:
             messagebox.showerror(settings.APP_NAME, self.tr("err_form"))
             return None
+        # Tampilkan ulang lengkap dengan nama harinya.
+        self.v_date.set(fmt_day(day, self.lang))
+        return day
 
     def _run(self, label_text, work):
         """Jalankan pekerjaan browser di thread lain supaya jendela tidak macet."""
@@ -581,14 +777,18 @@ class App:
             return
         self._set_busy(True)
         self.status.set(label_text)
+        self._show_progress((0, label_text, "", "run"))
 
         def target():
+            ok = False
             try:
                 work()
+                ok = True
             except Exception as e:
                 log.exception("Gagal: %s", label_text)
                 self.events.put(("error", str(e)))
             finally:
+                self.events.put(("finish", ok))
                 self.events.put(("done", None))
 
         threading.Thread(target=target, daemon=True).start()
@@ -607,6 +807,15 @@ class App:
                 elif kind == "error":
                     self.status.set(self.tr("failed") + value)
                     messagebox.showerror(settings.APP_NAME, value)
+                elif kind == "claude":
+                    self.claude_state = value
+                    self._show_claude_state()
+                elif kind == "draft":
+                    day, text, note = value
+                    self._set_draft(day, text)
+                    self.status.set(note)
+                    if note != self.tr("generated"):
+                        messagebox.showinfo(settings.APP_NAME, note)
                 elif kind == "wa":
                     self.wa_state = value
                     self._show_wa_state()
@@ -619,6 +828,14 @@ class App:
                 elif kind == "quit":
                     self.root.destroy()
                     return
+                elif kind == "progress":
+                    pct, note = value
+                    if self.prog_state:
+                        self._show_progress((pct, self.prog_state[1], note or self.prog_state[2], "run"))
+                elif kind == "finish":
+                    if self.prog_state:
+                        pct, title, note, _ = self.prog_state
+                        self._show_progress((100, title, "", "done") if value else (pct, title, note, "error"))
                 elif kind == "done":
                     self._set_busy(False)
         except queue.Empty:
@@ -636,10 +853,7 @@ class App:
         self.table.set_rows(rows, checked, self.tr("no_chats_yet"))
 
     def _read_day_quiet(self):
-        try:
-            return date.fromisoformat(self.v_date.get().strip())
-        except ValueError:
-            return None
+        return parse_day(self.v_date.get())
 
     def _load_saved(self, day):
         try:
@@ -677,9 +891,12 @@ class App:
             return
 
         def work():
+            self._progress(10)
             with WhatsApp(settings.PROFILE_DIR, headless=True) as wa:
+                self._progress(30)
                 ok = wa.wait_ready(timeout_s=40, sync_wait_s=20)
                 self.events.put(("wa", ok))
+                self._progress(70)
                 if ok:
                     self._scan_history(wa)
             self.events.put(("status", self.tr("wa_on" if ok else "wa_off")))
@@ -718,7 +935,7 @@ class App:
             return
 
         def work():
-            path = updater.download(info["url"], lambda p: self.events.put(("status", self.tr("downloading", p=p))))
+            path = updater.download(info["url"], lambda p: self._progress(p * 0.95, self.tr("downloading", p=p)))
             updater.install(path)
             self.events.put(("quit", None))
 
@@ -737,6 +954,7 @@ class App:
     def on_login(self):
         def work():
             self.events.put(("status", self.tr("scan_qr")))
+            self._progress(20, self.tr("scan_qr"))
             with WhatsApp(settings.PROFILE_DIR, headless=False) as wa:
                 ok = wa.wait_ready(timeout_s=300)
                 self.events.put(("wa", ok))
@@ -756,18 +974,25 @@ class App:
 
         def work():
             def progress(i, n, name):
-                self.events.put(("status", self.tr("reading", i=i, n=n, name=name)))
+                text = self.tr("reading", i=i, n=n, name=name)
+                self.events.put(("status", text))
+                # Membaca chat mengisi 20% sampai 90%.
+                self._progress(20 + 70 * (i - 1) / max(n, 1), text)
 
+            self._progress(5)
             with WhatsApp(settings.PROFILE_DIR, headless=True) as wa:
+                self._progress(10)
                 ok = wa.wait_ready()
                 self.events.put(("wa", ok))
                 if not ok:
                     raise RuntimeError(self.tr("not_logged_in"))
                 self.events.put(("status", self.tr("listing")))
+                self._progress(15, self.tr("listing"))
                 # Grup report tidak ikut dibaca sebagai pekerjaan.
                 names = [n for n in wa.list_chats(day, date.today())
                          if n not in exclude and n != group and not is_self_chat(n, phone)]
                 chats = wa.read_chats(names, day, progress)
+                self._progress(92, self.tr("history_checking"))
                 self._scan_history(wa)
 
             chats = {n: m for n, m in chats.items() if m}
@@ -779,6 +1004,54 @@ class App:
 
         self._run(self.tr("opening"), work)
 
+    def check_claude(self):
+        """Cek Claude Code di laptop ini dan status loginnya (tanpa membuka jendela)."""
+        def target():
+            cli = claude_ai.find_cli()
+            if not cli:
+                self.events.put(("claude", "missing"))
+                return
+            self.claude_cli = cli
+            try:
+                ok = claude_ai.status(cli).get("loggedIn")
+            except Exception as e:
+                log.warning("Cek status Claude gagal: %s", e)
+                ok = False
+            self.events.put(("claude", "on" if ok else "off"))
+
+        threading.Thread(target=target, daemon=True).start()
+
+    def on_claude_click(self):
+        if self.claude_state == "off" and not self.busy:
+            self._claude_login(then=None)
+        else:
+            self.check_claude()
+
+    def _claude_login(self, then):
+        """Buka login akun Claude, tunggu sampai selesai, lalu jalankan then() kalau ada."""
+        claude_ai.login(self.claude_cli)
+
+        def work():
+            self._progress(10, self.tr("claude_waiting_login"))
+            for i in range(90):
+                time.sleep(2)
+                if claude_ai.status(self.claude_cli).get("loggedIn"):
+                    self.events.put(("claude", "on"))
+                    if then:
+                        then()
+                    return
+                self._progress(10 + i * 0.4, self.tr("claude_waiting_login"))
+            raise RuntimeError(self.tr("claude_login_timeout"))
+
+        self._run(self.tr("claude_waiting_login"), work)
+
+    def _set_draft(self, day, text):
+        self.txt.delete("1.0", "end")
+        self.txt.insert("1.0", text)
+        settings.ensure_dirs()
+        with open(report_path(day), "w", encoding="utf-8") as f:
+            f.write(text)
+
     def on_generate(self):
         day = self._read_day()
         if day is None:
@@ -788,14 +1061,57 @@ class App:
             return
 
         picked = {n: self.chats[n] for n in self.table.checked()}
-        text = build_report(picked, day, self.cfg["name"], self.cfg["start_hour"], self.cfg["end_hour"], self.lang)
+        args = (picked, day, self.cfg["name"], self.cfg["start_hour"], self.cfg["end_hour"], self.lang,
+                self.cfg["routine"])
 
-        self.txt.delete("1.0", "end")
-        self.txt.insert("1.0", text)
-        settings.ensure_dirs()
-        with open(report_path(day), "w", encoding="utf-8") as f:
-            f.write(text)
-        self.status.set(self.tr("generated"))
+        def fallback(reason):
+            text = build_report(*args)
+            note = self.tr("claude_fallback", e=reason) if reason else self.tr("generated")
+            return day, text, note
+
+        # Tanpa Claude: langsung susun draf tanpa AI.
+        if self.claude_state == "missing" or not self.claude_cli:
+            day_, text, _ = fallback(None)
+            self._set_draft(day_, text)
+            self.status.set(self.tr("generated"))
+            return
+
+        def with_claude():
+            self._progress(15, self.tr("preparing"))
+            prompt = claude_ai.build_prompt(*args)
+            title = report_title(day, self.cfg["name"], self.lang)
+
+            # Claude butuh waktu 20-90 detik; progres dinaikkan pelan sampai 90%.
+            done = threading.Event()
+
+            def tick():
+                pct = 25
+                while not done.wait(2) and pct < 90:
+                    pct += 3
+                    self._progress(pct, self.tr("claude_writing"))
+
+            threading.Thread(target=tick, daemon=True).start()
+            try:
+                text = claude_ai.generate(self.claude_cli, prompt, title)
+                result = (day, text, self.tr("generated"))
+            except Exception as e:
+                log.warning("Claude gagal: %s", e)
+                result = fallback(str(e)[:160])
+            finally:
+                done.set()
+            self.events.put(("draft", result))
+
+        if self.claude_state == "off":
+            # Belum login: tawarkan login sekali; kalau ditolak, pakai draf tanpa AI.
+            if messagebox.askyesno(settings.APP_NAME, self.tr("claude_ask_login")):
+                self._claude_login(then=with_claude)
+            else:
+                day_, text, _ = fallback(None)
+                self._set_draft(day_, text)
+                self.status.set(self.tr("generated"))
+            return
+
+        self._run(self.tr("claude_writing"), with_claude)
 
     def on_copy(self):
         text = self._report_text()
@@ -851,6 +1167,7 @@ class App:
                 if not ok:
                     raise RuntimeError(self.tr("not_logged_in"))
                 self.events.put(("status", self.tr("sending")))
+                self._progress(60, self.tr("sending"))
                 if not wa.send_to_self(to_wa_number(phone), text):
                     raise RuntimeError(self.tr("send_unsure"))
             self.events.put(("info", self.tr("sent")))
@@ -871,6 +1188,7 @@ class App:
                 if not ok:
                     raise RuntimeError(self.tr("not_logged_in"))
                 self.events.put(("status", self.tr("sending")))
+                self._progress(60, self.tr("sending"))
                 if not wa.send_to_chat(group, text):
                     raise RuntimeError(self.tr("send_unsure"))
             self.events.put(("history", history.mark_sent(settings.HISTORY_FILE, day)))

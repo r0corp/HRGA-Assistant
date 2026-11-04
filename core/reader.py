@@ -243,10 +243,17 @@ class WhatsApp:
             if len(tail) == 5 and all(d < since for d in tail):
                 break
 
-            if not self.page.evaluate(JS_SCROLL_LIST, 400):
-                stale += 1
-                if stale >= 3:
-                    break
+            if self.page.evaluate(JS_SCROLL_LIST, 400):
+                stale = 0
+                continue
+
+            # Mentok di bawah. WhatsApp Web memuat daftar chat bertahap, jadi
+            # tunggu dulu barisan berikutnya (sampai ~10 detik) sebelum
+            # menganggap daftar sudah habis; dulu chat lama sempat terlewat.
+            stale += 1
+            if stale >= 8:
+                break
+            time.sleep(1.2)
 
         return [name for name, d in seen.items() if d and d >= since]
 
