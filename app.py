@@ -305,14 +305,13 @@ class CalendarPopup(tk.Toplevel):
 
         anchor.update_idletasks()
         self.geometry(f"+{anchor.winfo_rootx()}+{anchor.winfo_rooty() + anchor.winfo_height() + 4}")
-        # Tutup saat klik di luar kalender atau tekan Esc.
+        # Selalu di atas jendela utama. Dulu kalender ditutup saat kehilangan
+        # fokus, tapi di Windows fokus langsung kembali ke jendela utama saat
+        # mouse dilepas sehingga kalender tertutup sebelum terlihat.
+        self.transient(anchor.winfo_toplevel())
+        self.attributes("-topmost", True)
+        self.lift()
         self.bind("<Escape>", lambda e: self.destroy())
-        self.bind("<FocusOut>", lambda e: self.after(150, self._close_if_unfocused))
-        self.focus_force()
-
-    def _close_if_unfocused(self):
-        if self.winfo_exists() and self.focus_get() is None:
-            self.destroy()
 
     def _shift(self, months):
         y, m = divmod(self.month.month - 1 + months, 12)
@@ -532,6 +531,7 @@ class App:
         self.events = queue.Queue()
         self.busy = False
         self.update_info = None
+        self.update_dismissed = None
         # Status koneksi WhatsApp: None belum dicek, "checking", True, atau False.
         self.wa_state = None
         # Status Claude: None belum dicek, "on", "off" (belum login), "missing" (tidak terpasang).
@@ -567,6 +567,9 @@ class App:
         self._build()
         self._load_saved(date.today())
         root.after(150, self._poll)
+        root.bind_all("<Button-1>", self._click_anywhere, add="+")
+        # Kalender ikut tertutup kalau jendela utama dipindah atau diperkecil.
+        root.bind("<Configure>", lambda e: e.widget is root and self._close_calendar(), add="+")
         # Saat app dibuka: cek koneksi WhatsApp (sekaligus riwayat report) dan versi baru.
         root.after(800, self.on_check_wa)
         root.after(1000, self.check_claude)
@@ -701,8 +704,6 @@ class App:
         # Bagian bawah sidebar: pengaturan, versi, banner update.
         foot = tk.Frame(inner, bg=SIDE)
         foot.pack(side="bottom", fill="x")
-        self.update_slot = tk.Frame(foot, bg=SIDE)
-        self.update_slot.pack(fill="x")
         gear = FlatButton(foot, "⚙  " + self.tr("open_settings"), self.on_settings, anchor="w")
         gear.pack(fill="x", pady=(8, 8))
         self.buttons.append(gear)
@@ -713,6 +714,9 @@ class App:
         top.pack(fill="x", padx=24, pady=(20, 14))
         label(top, "HRGA Daily Report", 18, TEXT, True).pack(side="left")
         label(top, "PT Tradecorp Indonesia", 10, MUTED).pack(side="left", padx=(12, 0), pady=(8, 0))
+        # Tempat banner "versi baru tersedia" di kanan atas.
+        self.update_slot = tk.Frame(top, bg=BG)
+        self.update_slot.pack(side="right")
 
     def _build_timeline(self, main):
         """Riwayat report ke grup untuk 5 hari kerja terakhir."""
@@ -830,16 +834,27 @@ class App:
             self.buttons.append(b)
 
     def _show_update(self):
-        """Banner di sidebar kalau ada versi baru."""
+        """Banner di bar atas kalau ada versi baru di GitHub; bisa ditutup dengan x."""
         for w in self.update_slot.winfo_children():
             w.destroy()
-        if not self.update_info:
+        if not self.update_info or self.update_dismissed == self.update_info["version"]:
             return
-        label(self.update_slot, self.tr("update_available", v=self.update_info["version"]), 9, RED, True).pack(
-            anchor="w", pady=(0, 4))
-        b = FlatButton(self.update_slot, self.tr("update_now"), self.on_update, "primary", small=True)
-        b.pack(fill="x")
+        banner = RoundCard(self.update_slot, radius=10)
+        banner.pack()
+        body = banner.body
+        label(body, "\u2b06", 11, RED, True, bg=CARD).pack(side="left", padx=(12, 6), pady=6)
+        label(body, self.tr("update_available", v=self.update_info["version"]), 9, TEXT, True, bg=CARD).pack(side="left")
+        close = label(body, "\u2715", 9, MUTED, bg=CARD, cursor="hand2")
+        close.pack(side="right", padx=(8, 12))
+        close.bind("<Button-1>", lambda e: self._dismiss_update())
+        b = FlatButton(body, self.tr("update_now"), self.on_update, "primary", small=True)
+        b.pack(side="right", padx=(12, 0), pady=6)
         self.buttons.append(b)
+
+    def _dismiss_update(self):
+        # Ditutup sampai app dibuka lagi; versi baru tetap bisa dipasang lewat Pengaturan > Cek update.
+        self.update_dismissed = self.update_info["version"]
+        self._show_update()
 
     # ---------- utilitas ----------
 
@@ -871,11 +886,31 @@ class App:
         self.events.put(("progress", (int(pct), note)))
 
     def _open_calendar(self, entry):
-        if getattr(self, "calendar", None) and self.calendar.winfo_exists():
-            self.calendar.destroy()
+        if self._close_calendar():
             return
         self.calendar = CalendarPopup(entry, parse_day(self.v_date.get()), self.lang,
                                       lambda d: self.v_date.set(fmt_day(d, self.lang)))
+        self.calendar_entry = entry
+        return "break"
+
+    def _close_calendar(self):
+        cal = getattr(self, "calendar", None)
+        if cal is not None and cal.winfo_exists():
+            cal.destroy()
+            return True
+        return False
+
+    def _click_anywhere(self, e):
+        """Klik di luar kalender (dan bukan di kolom tanggal) menutup kalender."""
+        cal = getattr(self, "calendar", None)
+        if cal is None or not cal.winfo_exists():
+            return
+        w = e.widget
+        if isinstance(w, str) or w is getattr(self, "calendar_entry", None):
+            return
+        if str(w).startswith(str(cal)):
+            return
+        cal.destroy()
 
     def _set_day(self, back):
         self.v_date.set(fmt_day(date.today() - timedelta(days=back), self.lang))
@@ -1044,6 +1079,8 @@ class App:
                 if not silent:
                     self.events.put(("error", self.tr("update_failed") + str(e)))
                 return
+            if not silent:
+                self.update_dismissed = None
             self.events.put(("update", info))
             if info is None and not silent:
                 self.events.put(("info", self.tr("up_to_date", v=updater.VERSION)))
