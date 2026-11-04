@@ -18,7 +18,7 @@ import sv_ttk
 
 import time
 
-from core import autostart, claude_ai, history, settings, updater
+from core import autostart, claude_ai, deepl, history, settings, updater
 from core.i18n import DAYS, DAYS_SHORT, LANGS, MONTHS, t
 from core.pdf import save_pdf
 from core.reader import WhatsApp, is_self_chat
@@ -899,7 +899,10 @@ class App:
         pdf.pack(side="right", padx=(0, 6))
         copy = FlatButton(head, self.tr("copy"), self.on_copy, small=True)
         copy.pack(side="right", padx=(0, 6))
-        self.buttons += [send, pdf, copy]
+        # Terjemahkan draf ke Inggris lewat DeepL, seperti alur report biasanya.
+        tr_btn = FlatButton(head, "🌐  " + self.tr("deepl"), self.on_translate, small=True)
+        tr_btn.pack(side="right", padx=(0, 6))
+        self.buttons += [send, pdf, copy, tr_btn]
 
         # Deretan catatan per tanggal + tombol tambah catatan manual.
         strip = tk.Frame(box, bg=CARD)
@@ -1118,6 +1121,9 @@ class App:
                     self.status.set(note)
                     if note != self.tr("generated"):
                         messagebox.showinfo(settings.APP_NAME, note)
+                elif kind == "translated":
+                    self._replace_draft(*value)
+                    self.status.set(self.tr("translated"))
                 elif kind == "wa":
                     self.wa_state = value
                     self._show_wa_state()
@@ -1588,6 +1594,40 @@ class App:
             return
 
         self._run(self.tr("claude_writing"), with_claude)
+
+    def on_translate(self):
+        day = self._read_day()
+        if day is None:
+            return
+        text = self._report_text()
+        if not text:
+            messagebox.showinfo(settings.APP_NAME, self.tr("empty_draft"))
+            return
+        settings.ensure_dirs()
+        # Versi Indonesia disimpan dulu sebagai cadangan.
+        with open(report_path(day, "id.txt"), "w", encoding="utf-8") as f:
+            f.write(text)
+
+        def work():
+            self._progress(10, self.tr("deepl_opening"))
+            english = deepl.translate(text, day, self.cfg["name"],
+                                      progress=lambda p: self._progress(p, self.tr("deepl_working")))
+            self.events.put(("translated", (day, english)))
+
+        self._run(self.tr("deepl_working"), work)
+
+    def _replace_draft(self, day, text):
+        """Ganti isi draf dalam satu langkah undo, jadi Ctrl+Z mengembalikan versi Indonesia."""
+        with open(report_path(day), "w", encoding="utf-8") as f:
+            f.write(text)
+        if day != self.note_day:
+            return
+        self.txt.configure(autoseparators=False)
+        self.txt.edit_separator()
+        self.txt.delete("1.0", "end")
+        self.txt.insert("1.0", text)
+        self.txt.edit_separator()
+        self.txt.configure(autoseparators=True)
 
     def on_copy(self):
         text = self._report_text()

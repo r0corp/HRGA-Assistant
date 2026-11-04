@@ -19,6 +19,10 @@ MONTHS = {
 
 TEXT = {
     "id": {
+        "deepl": "Terjemahkan",
+        "deepl_opening": "Membuka DeepL...",
+        "deepl_working": "Menerjemahkan ke Inggris dengan DeepL...",
+        "translated": "Draf sudah diterjemahkan ke Inggris. Tekan Ctrl+Z untuk kembali ke versi Indonesia.",
         "holidays_title": "Libur nasional",
         "holidays_none": "Tidak ada libur nasional bulan ini.",
         "notes_count": "{n} catatan",
@@ -157,6 +161,10 @@ TEXT = {
         "failed": "Gagal: ",
     },
     "en": {
+        "deepl": "Translate",
+        "deepl_opening": "Opening DeepL...",
+        "deepl_working": "Translating to English with DeepL...",
+        "translated": "Draft translated to English. Press Ctrl+Z to go back to the Indonesian version.",
         "holidays_title": "National holidays",
         "holidays_none": "No national holidays this month.",
         "notes_count": "{n} notes",

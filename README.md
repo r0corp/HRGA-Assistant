@@ -17,6 +17,7 @@ App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report den
 - **Catatan manual:** tambahkan sticky note untuk pekerjaan yang tidak ada di chat; catatan ini ikut masuk report saat Generate. Catatan bisa disembunyikan.
 - **Kalender dengan libur nasional:** klik tanggal report untuk membuka kalender dropdown, lengkap dengan daftar libur nasional Indonesia bulan itu.
 - **Kirim ke grup:** report dikirim hanya ke grup **GRUP TEAM HRGA**. Selain itu, draf bisa disalin atau disimpan sebagai PDF berkop logo perusahaan.
+- **Terjemahkan (DeepL):** satu klik menerjemahkan draf ke Inggris lewat DeepL web (gratis, tanpa API key). Nama hari di judul tetap Indonesia, sapaan pak/mas/mba tidak diubah jadi Mr./Ms., dan Ctrl+Z mengembalikan versi Indonesia.
 - **Timeline 5 hari kerja:** menandai hari yang sudah report ke grup dan yang terlewat, dibaca langsung dari isi grup. Report yang dikirim manual juga ikut terhitung.
 - **Indikator WhatsApp dan Claude:** menunjukkan apakah sesi WhatsApp Web dan login Claude masih tersambung.
 - **Panel progres:** persentase 0–100% untuk setiap proses, lalu "Complete" saat selesai.

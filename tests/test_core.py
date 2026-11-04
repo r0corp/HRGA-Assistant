@@ -203,3 +203,26 @@ def test_catatan_manual_ada_di_prompt_claude():
     from core.claude_ai import build_prompt
     p = build_prompt({}, DAY, "Sari", manual=["Ganti lampu ruang meeting lantai 2"])
     assert "Catatan manual" in p and "- Ganti lampu ruang meeting lantai 2" in p
+
+
+def test_deepl_rebuild_keeps_layout_and_honorifics():
+    from datetime import date
+    from core import deepl
+    src = "Daily Report Rabu/04 November 2026 (Budi).\n1. Perbaikan laptop pak Andi.\n   - Sudah normal.\n\n2. Cek email mba Sari."
+    lines = [l.strip() for l in src.splitlines() if l.strip() and not deepl.TITLE_RE.match(l)]
+    out = "1. Repaired Mr. Andi\u2019s laptop.\n\n- It\u2019s working normally.\n\n2. Checked Ms. Sari\u2019s email."
+    got = deepl.rebuild(src, deepl.align(lines, out), deepl.english_title(date(2026, 11, 4), "Budi"))
+    got = deepl.fix_honorifics(src, got)
+    assert got.splitlines() == [
+        "Daily Report Rabu/04 November 2026 (Budi).",
+        "1. Repaired pak Andi's laptop.",
+        "   - It's working normally.",
+        "",
+        "2. Checked mba Sari's email.",
+    ]
+
+
+def test_deepl_chunks_respect_limit():
+    from core import deepl
+    parts = deepl.chunks(["a" * 600, "b" * 600, "c" * 600], limit=1300)
+    assert [len(p) for p in parts] == [2, 1]
