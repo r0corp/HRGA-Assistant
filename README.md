@@ -1,8 +1,49 @@
 # HRGA WA Report
 
-App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report dengan Claude, lalu kirim ke grup tim.
+App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report dengan Claude, lalu kirim ke supervisor HRGA lewat server HRGA (atau ke grup tim, sementara).
 
 ![Tampilan utama](docs/main-1.1.1.png)
+
+## Alur & relasi aplikasi
+
+```mermaid
+flowchart LR
+    subgraph LAPTOP["Laptop tim HRGA (app .exe)"]
+        WA["WhatsApp Web<br/>(Edge headless)"] -->|Tarik Chat| APP["HRGA WA Report"]
+        NOTE["Catatan manual"] --> APP
+        APP <-->|"Generate & Chat Claude"| CL["Claude Code<br/>(langganan di laptop)"]
+        APP -->|Terjemahkan| DL["DeepL web"]
+    end
+
+    subgraph HP["HP tim Android"]
+        WEB["Halaman web HRGA Report<br/>(Chrome, login nama + PIN)"]
+    end
+
+    subgraph SRV["PC server (app .exe, Mode server)"]
+        API["Server HRGA<br/>127.0.0.1:8400"]
+        DATA[("User, sesi, report<br/>per tanggal")]
+        CLS["Claude Code<br/>(akun Supervisor)"]
+        API <--> DATA
+        API <-->|"Rapikan cerita, Generate,<br/>Chat untuk laptop tanpa Claude"| CLS
+    end
+
+    TS{{"Tailscale Funnel<br/>HTTPS *.ts.net"}}
+
+    APP -->|"Kirim ke Supervisor"| TS
+    APP -.->|"Laptop tanpa Claude"| TS
+    WEB -->|"Cerita → Rapikan → Kirim"| TS
+    TS --> API
+    APP -.->|"Kirim ke Grup (sementara)"| GRP["Grup WhatsApp tim"]
+
+    SPV["Supervisor HRGA<br/>(Rekap Tim di app / web)"] -->|"Lihat siapa sudah/belum report"| TS
+```
+
+**Alur harian:**
+
+1. **Tim laptop:** Tarik Chat WhatsApp, lalu Generate Report dengan Claude. Tambahkan catatan untuk pekerjaan di luar chat, rapikan lewat Chat Claude, lalu klik **Kirim ke Fena**. Kalau laptop tidak punya Claude, Generate dan Chat memakai Claude di PC server.
+2. **Tim Android:** buka halaman web di HP, ketik atau dikte cerita pekerjaan, lalu **Rapikan dengan Claude**, **Minta ubah** bila perlu, dan **Kirim ke Fena**.
+3. **Supervisor:** buka **Rekap Tim** untuk melihat siapa yang sudah dan belum report, membaca isi report, lalu **Salin semua** atau **Simpan PDF**.
+4. **PC server:** menyimpan semua report dan menjalankan Claude bersama. Server hanya bisa diakses lewat Tailscale Funnel (HTTPS), dengan login nama + PIN. Panduan setup: [docs/server.md](docs/server.md).
 
 ## Fitur
 
@@ -19,7 +60,7 @@ App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report den
 - **Kirim ke grup:** report dikirim hanya ke grup **GRUP TEAM HRGA**. Selain itu, draf bisa disalin atau disimpan sebagai PDF berkop logo perusahaan.
 - **Terjemahkan (DeepL):** satu klik menerjemahkan draf ke Inggris lewat DeepL web (gratis, tanpa API key). Nama hari di judul tetap Indonesia, sapaan pak/mas/mba tidak diubah jadi Mr./Ms., dan Ctrl+Z mengembalikan versi Indonesia.
 - **Chat Claude:** tanya jawab dengan Claude langsung di app, mis. "poin 3 dasarnya dari chat mana?" atau "poin 2 bukan kerjaan saya, hapus". Claude melihat draf, item rutin, catatan, dan chat WhatsApp tanggal yang dibuka; revisi report bisa diterapkan ke draf dengan satu klik.
-- **Server HRGA, Kirim ke Fena, dan Rekap Tim:** satu PC server menampung report seluruh tim untuk Fena. Tim Android (tanpa laptop) membuka halaman web di HP, mengetik atau mendikte cerita pekerjaan, lalu Claude merapikannya jadi daily report. Tim laptop mengirim report ke Fena dari app. Fena melihat siapa yang sudah/belum report di Rekap Tim. Akses dari luar kantor lewat Tailscale Funnel, login nama + PIN. Panduan: [docs/server.md](docs/server.md).
+- **Server HRGA, Kirim ke Fena, dan Rekap Tim:** satu PC server menampung report seluruh tim untuk Fena. Tim Android (tanpa laptop) membuka halaman web di HP, mengetik atau mendikte cerita pekerjaan, lalu Claude merapikannya jadi daily report. Tim laptop mengirim report ke supervisor (Fena) dari app. Supervisor melihat siapa yang sudah/belum report di Rekap Tim. Akses dari luar kantor lewat Tailscale Funnel, login nama + PIN. Panduan: [docs/server.md](docs/server.md).
 - **Timeline 5 hari kerja:** menandai hari yang sudah report ke grup dan yang terlewat, dibaca langsung dari isi grup. Report yang dikirim manual juga ikut terhitung.
 - **Indikator WhatsApp dan Claude:** menunjukkan apakah sesi WhatsApp Web dan login Claude masih tersambung.
 - **Panel progres:** persentase 0–100% untuk setiap proses, lalu "Complete" saat selesai.
