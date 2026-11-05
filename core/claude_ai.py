@@ -169,6 +169,41 @@ def build_prompt(chats, day, name="", start_hour=6, end_hour=17, lang="id", rout
             f"Chat kerja tanggal {day.isoformat()} (jam {start_hour:02d}:00-{end_hour:02d}:00):\n\n{chats_text}\n")
 
 
+STORY = {
+    "id": """Penulis menceritakan pekerjaannya hari ini dengan bahasa sehari-hari (bisa hasil dikte suara,
+jadi mungkin ada salah ketik atau kalimat berantakan). Susun menjadi daily report.
+Aturan:
+- Baris pertama persis: {title}
+- Lalu satu baris kosong, lalu daftar bernomor "1.", "2.", dst., rapat tanpa baris kosong di antara nomor.
+  Detail boleh memakai sub-poin yang diawali "- ".
+- Satu poin per pekerjaan, kalimat kerja singkat tapi jelas: apa yang dikerjakan, di mana/untuk siapa, dan
+  hasilnya kalau disebut.
+- HANYA isi yang ada di cerita. Jangan menambah pekerjaan, tempat, nama, jam, atau hasil yang tidak disebut.
+- Buang basa-basi dan hal pribadi. Jangan tulis password, OTP, PIN, atau nomor rekening.
+- Perbaiki ejaan dan kata yang jelas salah dengar dari dikte suara.
+{routine}- Bahasa report: Bahasa Indonesia.""",
+    "en": """The author describes today's work in everyday language (possibly voice dictation with typos).
+Turn it into a daily report.
+Rules:
+- The first line must be exactly: {title}
+- Then one blank line, then a compact numbered list "1.", "2.", etc. with no blank lines. Details may use
+  sub-points starting with "- ".
+- One point per task, short but clear: what was done, where/for whom, and the result if mentioned.
+- ONLY what is in the story. Never add tasks, places, names, times, or results that were not mentioned.
+- Drop small talk and personal matters. Never write passwords, OTPs, PINs, or account numbers.
+- Fix spelling and words clearly misheard by voice dictation.
+{routine}- Report language: English.""",
+}
+
+
+def build_story_prompt(story, day, name="", lang="id", routine=()):
+    """Cerita bebas (ketik/dikte dari HP) -> prompt daily report."""
+    title = report_title(day, name, lang)
+    items = "\n".join(f"  {r}" for r in routine)
+    rules = STORY[lang].format(title=title, routine=ROUTINE[lang].format(items=items) if routine else "")
+    return f"{rules}\n\nCerita penulis ({name or 'penulis'}):\n{' '.join(redact(story).split())}\n"
+
+
 def tidy(text, title):
     """Bersihkan jawaban Claude: buang markdown dan pastikan judulnya benar."""
     text = text.strip().replace("**", "")

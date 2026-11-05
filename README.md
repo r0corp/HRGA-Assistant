@@ -19,6 +19,7 @@ App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report den
 - **Kirim ke grup:** report dikirim hanya ke grup **GRUP TEAM HRGA**. Selain itu, draf bisa disalin atau disimpan sebagai PDF berkop logo perusahaan.
 - **Terjemahkan (DeepL):** satu klik menerjemahkan draf ke Inggris lewat DeepL web (gratis, tanpa API key). Nama hari di judul tetap Indonesia, sapaan pak/mas/mba tidak diubah jadi Mr./Ms., dan Ctrl+Z mengembalikan versi Indonesia.
 - **Chat Claude:** tanya jawab dengan Claude langsung di app, mis. "poin 3 dasarnya dari chat mana?" atau "poin 2 bukan kerjaan saya, hapus". Claude melihat draf, item rutin, catatan, dan chat WhatsApp tanggal yang dibuka; revisi report bisa diterapkan ke draf dengan satu klik.
+- **Server HRGA, Kirim ke Fena, dan Rekap Tim:** satu PC server menampung report seluruh tim untuk Fena. Tim Android (tanpa laptop) membuka halaman web di HP, mengetik atau mendikte cerita pekerjaan, lalu Claude merapikannya jadi daily report. Tim laptop mengirim report ke Fena dari app. Fena melihat siapa yang sudah/belum report di Rekap Tim. Akses dari luar kantor lewat Tailscale Funnel, login nama + PIN. Panduan: [docs/server.md](docs/server.md).
 - **Timeline 5 hari kerja:** menandai hari yang sudah report ke grup dan yang terlewat, dibaca langsung dari isi grup. Report yang dikirim manual juga ikut terhitung.
 - **Indikator WhatsApp dan Claude:** menunjukkan apakah sesi WhatsApp Web dan login Claude masih tersambung.
 - **Panel progres:** persentase 0–100% untuk setiap proses, lalu "Complete" saat selesai.

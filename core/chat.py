@@ -94,6 +94,15 @@ def extract_notes(text):
     return [" ".join(n.split()) for n in NOTE_RE.findall(text or "") if n.strip()]
 
 
+def reply_only(text):
+    """Penjelasan Claude saja, tanpa blok report dan catatan (report sudah tampil di draf)."""
+    text = REPORT_RE.sub("", NOTE_RE.sub("", text or ""))
+    loose = LOOSE_RE.search(text)
+    if loose:
+        text = text[:loose.start()] + text[loose.end():]
+    return re.sub(r"\n{2,}", "\n", text).replace("**", "").strip()
+
+
 def display_text(text):
     """Teks jawaban tanpa penanda [REPORT] dan tanpa blok [CATATAN]."""
     text = NOTE_RE.sub("", text or "")

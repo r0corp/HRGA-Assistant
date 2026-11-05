@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c8102e">
+<meta name="robots" content="noindex, nofollow">
+<title>HRGA Report</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <img src="/logo.png" alt="Tradecorp" class="logo">
+  <div class="who hidden" id="who"><span id="who-name"></span><button class="link" id="logout">Keluar</button></div>
+</header>
+<div class="redline"></div>
+
+<!-- Login -->
+<main id="view-login" class="view hidden">
+  <h1>HRGA Daily Report</h1>
+  <p class="muted">Masuk dengan nama dan PIN dari Fena / IT.</p>
+  <form id="login-form" class="card" autocomplete="on">
+    <label for="login-name">Nama</label>
+    <input id="login-name" name="username" autocomplete="username" required maxlength="40" placeholder="mis. Sadam">
+    <label for="login-pin">PIN (6 angka)</label>
+    <input id="login-pin" name="password" type="password" inputmode="numeric" pattern="\d{6}" maxlength="6"
+           autocomplete="current-password" required>
+    <button class="btn primary" type="submit" id="login-btn">Masuk</button>
+    <p class="error" id="login-error"></p>
+  </form>
+</main>
+
+<!-- Setelah login -->
+<nav id="tabs" class="tabs hidden">
+  <button data-tab="today" class="active">Report</button>
+  <button data-tab="history">Riwayat</button>
+  <button data-tab="team" class="admin-only hidden">Rekap Tim</button>
+</nav>
+
+<main id="view-today" class="view hidden">
+  <div class="row">
+    <input type="date" id="day">
+    <span class="pill" id="sent-pill">Belum dikirim</span>
+  </div>
+
+  <section class="card">
+    <h2>1. Ceritakan pekerjaan hari ini</h2>
+    <p class="muted small">Ketik bebas, atau tekan ikon 🎤 di keyboard HP untuk dikte suara.</p>
+    <textarea id="story" rows="5" maxlength="6000"
+              placeholder="mis. pagi bersihin ruang meeting lt 2, siang antar dokumen ke Cakung, sore isi galon pantry"></textarea>
+    <button class="btn primary" id="tidy-btn">✨ Rapikan dengan Claude</button>
+  </section>
+
+  <section class="card paper">
+    <div class="paper-bar"><span>2. Draf report</span><span class="muted small" id="saved"></span></div>
+    <textarea id="report" rows="9" maxlength="12000" placeholder="Draf muncul di sini setelah dirapikan. Bisa diedit langsung."></textarea>
+  </section>
+
+  <section class="card">
+    <h2>Minta Claude ubah</h2>
+    <div class="row">
+      <input id="revise" maxlength="500" placeholder="mis. hapus poin 2, tambahkan perbaikan lampu toilet">
+      <button class="btn" id="revise-btn">Ubah</button>
+    </div>
+    <p class="muted small" id="revise-reply"></p>
+  </section>
+
+  <div class="actions">
+    <button class="btn" id="copy-btn">Salin</button>
+    <button class="btn primary" id="send-btn">Kirim ke Fena</button>
+  </div>
+</main>
+
+<main id="view-history" class="view hidden">
+  <h2>7 hari terakhir</h2>
+  <div id="history-list"></div>
+</main>
+
+<main id="view-team" class="view hidden">
+  <div class="row">
+    <input type="date" id="team-day">
+    <span class="pill" id="team-count"></span>
+  </div>
+  <div id="team-list"></div>
+  <div class="actions"><button class="btn primary" id="team-copy">Salin semua</button></div>
+</main>
+
+<div id="toast" class="toast hidden"></div>
+<div id="busy" class="busy hidden"><div class="spinner"></div><p id="busy-text">Memproses...</p></div>
+</body>
+</html>

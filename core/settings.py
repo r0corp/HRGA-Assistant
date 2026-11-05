@@ -34,7 +34,18 @@ DEFAULTS = {
     "exclude": [],
     # Sapaan per orang di report, mis. {"Juproni": "pak", "Heni": "mba"}.
     "nicknames": {},
+    # PC server: jalankan server web HRGA (untuk HP tim Android dan Rekap Tim).
+    "server_mode": False,
+    # Laptop: alamat server HRGA (Tailscale Funnel) dan sesi login ke sana.
+    "server_url": "",
+    "server_user": "",
+    "server_role": "",
+    "server_token": "",
+    # Tujuan tombol kirim: "group" (GRUP TEAM HRGA, sementara) atau "fena" (server HRGA).
+    "send_to": "group",
 }
+
+SERVER_DIR = os.path.join(DATA_DIR, "server")
 
 
 def ensure_dirs():

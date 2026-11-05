@@ -18,7 +18,8 @@ import sv_ttk
 
 import time
 
-from core import autostart, chat, claude_ai, deepl, history, settings, updater
+from core import autostart, chat, claude_ai, client, deepl, funnel, history, settings, team, updater
+from core.server import ReportServer
 from core.i18n import DAYS, DAYS_SHORT, LANGS, MONTHS, t
 from core.pdf import save_pdf
 from core.reader import WhatsApp, is_self_chat
@@ -532,8 +533,34 @@ class SettingsDialog(tk.Toplevel):
                               tr("claude_login"), self._claude_login)
             label(box, tr("claude_hint"), 8, MUTED, wraplength=280, justify="left").pack(anchor="w", pady=(8, 0))
 
+        # Server HRGA: alamat, login, tujuan kirim report; di PC server juga Mode server + Funnel.
+        self.v_url = tk.StringVar(value=cfg.get("server_url", ""))
+        self.v_send_to = tk.StringVar(value=cfg.get("send_to", "group"))
+        self.v_server = tk.BooleanVar(value=cfg.get("server_mode", False))
+        box = self._group(left, tr("srv_section"))
+        logged = bool(cfg.get("server_token"))
+        self._account_row(box, logged, tr("srv_on", u=cfg.get("server_user", "")), tr("srv_off"),
+                          tr("srv_logout") if logged else tr("srv_login"),
+                          self._server_logout if logged else self._server_login)
+        self._field(box, tr("srv_url"), ttk.Entry(box, textvariable=self.v_url, width=40), tr("srv_url_hint"))
+        label(box, tr("send_to")).pack(anchor="w", pady=(6, 2))
+        for value, key in (("fena", "send_to_fena"), ("group", "send_to_group")):
+            ttk.Radiobutton(box, text=tr(key), value=value, variable=self.v_send_to,
+                            style="Card.TRadiobutton").pack(anchor="w")
+        ttk.Checkbutton(box, text=tr("server_mode"), variable=self.v_server, style="Card.TCheckbutton").pack(
+            anchor="w", pady=(8, 0))
+        if app.server:
+            row = tk.Frame(box, bg=CARD)
+            row.pack(fill="x", pady=(4, 0))
+            label(row, tr("server_running", p=app.server.port), 8, GREEN).pack(side="left")
+            FlatButton(row, tr("users"), lambda: UsersWindow(app, self), small=True).pack(side="right")
+            self.funnel_label = label(box, tr("funnel") + ": …", 8, MUTED, wraplength=290, justify="left")
+            self.funnel_label.pack(anchor="w", pady=(6, 0))
+            self.funnel_btn = FlatButton(box, tr("funnel_enable"), self._funnel_enable, small=True)
+            self._funnel_status()
+
         # Tentang: versi dan update.
-        box = self._group(left, tr("about"))
+        box = self._group(right, tr("about"))
         row = tk.Frame(box, bg=CARD)
         row.pack(fill="x")
         label(row, f"{settings.APP_NAME}  ·  " + tr("version", v=updater.VERSION), 9, MUTED).pack(side="left")
@@ -583,7 +610,11 @@ class SettingsDialog(tk.Toplevel):
             routine=[s.strip() for s in self.routine.get("1.0", "end").splitlines() if s.strip()],
             nicknames=parse_nicknames(self.nicknames.get("1.0", "end")),
             lang=lang,
+            server_url=client.normalize(self.v_url.get()),
+            send_to=self.v_send_to.get(),
+            server_mode=self.v_server.get(),
         )
+        self.app.apply_server_mode()
         settings.save(self.app.cfg)
         try:
             if self.v_auto.get() != autostart.is_enabled():
@@ -626,6 +657,111 @@ class SettingsDialog(tk.Toplevel):
             self.destroy()
             self.app.refresh()
             self.app.on_login()
+
+    # ----- server HRGA -----
+
+    def _server_login(self):
+        app, tr = self.app, self.app.tr
+        url = client.normalize(self.v_url.get())
+        if not url:
+            messagebox.showinfo(settings.APP_NAME, tr("srv_url_hint"), parent=self)
+            return
+        dlg = tk.Toplevel(self, bg=BG)
+        dlg.title(tr("srv_login_title"))
+        dlg.transient(self)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        body = tk.Frame(dlg, bg=BG)
+        body.pack(padx=18, pady=14)
+        v_name = tk.StringVar(value=app.cfg.get("server_user") or app.cfg.get("name", ""))
+        v_pin = tk.StringVar()
+        label(body, tr("srv_name"), bg=BG).pack(anchor="w")
+        ttk.Entry(body, textvariable=v_name, width=28).pack(fill="x", pady=(2, 8))
+        label(body, tr("srv_pin"), bg=BG).pack(anchor="w")
+        pin_entry = ttk.Entry(body, textvariable=v_pin, width=28, show="•")
+        pin_entry.pack(fill="x", pady=(2, 8))
+        err = label(body, "", 8, RED, bg=BG, wraplength=240, justify="left")
+        err.pack(anchor="w")
+
+        def go(_e=None):
+            c = client.Client(url)
+            try:
+                user = c.login(v_name.get().strip(), v_pin.get().strip())
+            except client.ServerError as e:
+                err.configure(text=str(e))
+                return
+            app.cfg.update(server_url=url, server_user=user["name"], server_role=user["role"],
+                           server_token=c.token)
+            if app.cfg.get("send_to") == "group":
+                app.cfg["send_to"] = "fena"
+                self.v_send_to.set("fena")
+            settings.save(app.cfg)
+            dlg.destroy()
+            if self._read():
+                self.destroy()
+                app.refresh()
+
+        FlatButton(body, tr("srv_login"), go, "primary").pack(fill="x", pady=(6, 0))
+        pin_entry.bind("<Return>", go)
+        pin_entry.focus_set()
+
+    def _server_logout(self):
+        app = self.app
+        try:
+            client.Client(app.cfg["server_url"], app.cfg.get("server_token")).logout()
+        except client.ServerError:
+            pass
+        app.cfg.update(server_token="", server_role="")
+        settings.save(app.cfg)
+        if self._read():
+            self.destroy()
+            app.refresh()
+
+    def _funnel_status(self):
+        def target():
+            cli = funnel.find_cli()
+            if not cli:
+                text, show_btn = self.app.tr("funnel_missing"), False
+            else:
+                url = funnel.public_url(cli)
+                on = url and funnel.is_on(cli, self.app.server.port)
+                text = self.app.tr("funnel_on", u=url) if on else self.app.tr("funnel_off")
+                show_btn = not on
+            self.after(0, lambda: self._show_funnel(text, show_btn))
+
+        threading.Thread(target=target, daemon=True).start()
+
+    def _show_funnel(self, text, show_btn):
+        if not self.winfo_exists():
+            return
+        self.funnel_label.configure(text=self.app.tr("funnel") + ": " + text)
+        if show_btn:
+            self.funnel_btn.pack(anchor="w", pady=(4, 0))
+        else:
+            self.funnel_btn.pack_forget()
+
+    def _funnel_enable(self):
+        cli = funnel.find_cli()
+        if not cli or not self.app.server:
+            return
+        self.funnel_btn.configure(state="disabled")
+
+        def target():
+            ok, out = funnel.enable(cli, self.app.server.port)
+            url = funnel.public_url(cli)
+            self.after(0, lambda: done(ok, out, url))
+
+        def done(ok, out, url):
+            if not self.winfo_exists():
+                return
+            self.funnel_btn.configure(state="normal")
+            if ok:
+                messagebox.showinfo(settings.APP_NAME, self.app.tr("funnel_done", u=url), parent=self)
+            else:
+                messagebox.showerror(settings.APP_NAME, self.app.tr("funnel_failed", e=out[:600]), parent=self)
+            self._funnel_status()
+
+        threading.Thread(target=target, daemon=True).start()
 
 
 # ---------- jendela utama ----------
@@ -866,6 +1002,225 @@ class ChatWindow(tk.Toplevel):
         self.destroy()
 
 
+class SmallWindow(tk.Toplevel):
+    """Jendela kecil bertema sama dengan Chat Claude: kop abu-abu, garis merah."""
+
+    def __init__(self, app, title, size, parent=None):
+        super().__init__(parent or app.root, bg=SIDE)
+        self.app = app
+        self.title(title)
+        try:
+            self.iconphoto(False, app.icon)
+        except (tk.TclError, AttributeError):
+            pass
+        w, h = size
+        app.root.update_idletasks()
+        x = app.root.winfo_rootx() + (app.root.winfo_width() - w) // 2
+        y = app.root.winfo_rooty() + 60
+        self.geometry(f"{w}x{h}+{max(x, 0)}+{max(y, 0)}")
+        self.head = tk.Frame(self, bg=SIDE)
+        self.head.pack(fill="x", padx=14, pady=(12, 0))
+        label(self.head, title, 11, TEXT, True, bg=SIDE).pack(side="left")
+        tk.Frame(self, bg=RED, height=3, width=40).pack(anchor="w", padx=14, pady=(6, 8))
+
+
+class TeamWindow(SmallWindow):
+    """Rekap Tim untuk Fena: siapa yang sudah/belum report, isi report, salin & PDF."""
+
+    def __init__(self, app):
+        super().__init__(app, app.tr("team_title"), (560, 600))
+        tr = app.tr
+        self.day = date.today()
+        self.rows = []
+        self.text_all = ""
+
+        nav = tk.Frame(self, bg=SIDE)
+        nav.pack(fill="x", padx=14)
+        FlatButton(nav, "‹", lambda: self._shift(-1), small=True).pack(side="left")
+        self.day_label = label(nav, "", 10, TEXT, True, bg=SIDE)
+        self.day_label.pack(side="left", padx=8)
+        FlatButton(nav, "›", lambda: self._shift(1), small=True).pack(side="left")
+        FlatButton(nav, tr("today"), lambda: self._go(date.today()), "ghost", small=True).pack(side="left", padx=6)
+        self.count = label(nav, "", 9, MUTED, True, bg=SIDE)
+        self.count.pack(side="right")
+
+        foot = tk.Frame(self, bg=SIDE)
+        foot.pack(side="bottom", fill="x", padx=14, pady=(0, 12))
+        FlatButton(foot, tr("team_pdf"), self.on_pdf, small=True).pack(side="right")
+        FlatButton(foot, tr("team_copy"), self.on_copy, "primary", small=True).pack(side="right", padx=(0, 6))
+        self.msg = label(foot, "", 8, MUTED, bg=SIDE)
+        self.msg.pack(side="left")
+
+        body = tk.Frame(self, bg=SIDE)
+        body.pack(fill="both", expand=True, padx=14, pady=(8, 8))
+        card_ = RoundCard(body, expand=True, width=170)
+        card_.configure(bg=SIDE)
+        card_.pack(side="left", fill="y")
+        self.list = tk.Listbox(card_.body, width=18, font=(FONT, 9), relief="flat", bd=0, highlightthickness=0,
+                               activestyle="none", selectbackground="#fbe9ec", selectforeground=TEXT)
+        self.list.pack(fill="both", expand=True, padx=6, pady=6)
+        self.list.bind("<<ListboxSelect>>", self._pick)
+        paper = RoundCard(body, expand=True, fill=NOTE_BG, outline=NOTE_BAR)
+        paper.configure(bg=SIDE)
+        paper.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        self.view = tk.Text(paper.body, wrap="word", font=(FONT, 9), relief="flat", bd=0, bg=NOTE_BG, fg=TEXT,
+                            padx=10, pady=8, highlightthickness=0)
+        self.view.pack(fill="both", expand=True)
+        self._go(self.day)
+
+    def _shift(self, n):
+        self._go(self.day + timedelta(days=n))
+
+    def _go(self, day):
+        self.day = min(day, date.today())
+        self.day_label.configure(text=fmt_day(self.day, self.app.lang))
+        self.msg.configure(text="…")
+        app = self.app
+
+        def target():
+            try:
+                if app.server:
+                    rows = app.server.team.recap(self.day)
+                    data = {"rows": rows, "text": team.recap_text(rows, self.day)}
+                else:
+                    data = client.Client(app.cfg["server_url"], app.cfg.get("server_token")).team(self.day)
+                self.after(0, lambda: self._show(data))
+            except Exception as e:
+                self.after(0, lambda: self.msg.configure(text=str(e)[:80]))
+
+        threading.Thread(target=target, daemon=True).start()
+
+    def _show(self, data):
+        if not self.winfo_exists():
+            return
+        tr = self.app.tr
+        self.rows, self.text_all = data["rows"], data["text"]
+        done = sum(1 for r in self.rows if r["sent_at"])
+        self.count.configure(text=tr("team_count", n=done, t=len(self.rows)), fg=GREEN if done == len(self.rows) else RED)
+        self.msg.configure(text="")
+        self.list.delete(0, "end")
+        for i, r in enumerate(self.rows):
+            self.list.insert("end", ("✓  " if r["sent_at"] else "✕  ") + r["name"])
+            self.list.itemconfigure(i, fg=GREEN if r["sent_at"] else RED)
+        self._set_view(self.text_all if done else tr("team_empty"))
+
+    def _set_view(self, text):
+        self.view.configure(state="normal")
+        self.view.delete("1.0", "end")
+        self.view.insert("1.0", text)
+        self.view.configure(state="disabled")
+
+    def _pick(self, _e=None):
+        sel = self.list.curselection()
+        if not sel:
+            return
+        r = self.rows[sel[0]]
+        tr = self.app.tr
+        head = f"{r['name']} · {r['title']} · " + (
+            tr("team_sent", t=r["sent_at"][11:16]) if r["sent_at"] else tr("team_not_sent"))
+        self._set_view(head + "\n\n" + (r["text"] or ""))
+
+    def on_copy(self):
+        if self.text_all:
+            self.clipboard_clear()
+            self.clipboard_append(self.text_all)
+            self.msg.configure(text=self.app.tr("copied"))
+
+    def on_pdf(self):
+        if not any(r["sent_at"] for r in self.rows):
+            return
+        settings.ensure_dirs()
+        path = save_pdf(self.text_all, report_path(self.day, "tim.pdf"), asset("logo-wide.png"))
+        os.startfile(path)
+
+
+class UsersWindow(SmallWindow):
+    """Kelola user server HRGA (khusus PC server): PIN, cabut login, tambah, hapus."""
+
+    def __init__(self, app, parent=None):
+        super().__init__(app, app.tr("users_title"), (560, 430), parent)
+        self.transient(parent or app.root)
+        self.grab_set()
+        tr = app.tr
+        self.team = app.server.team
+        cols = ("name", "title", "device", "pin", "sessions")
+        foot = tk.Frame(self, bg=SIDE)
+        foot.pack(side="bottom", fill="x", padx=14, pady=(0, 12))
+        for key, cmd, kind in (("users_pin", self.on_pin, "primary"), ("users_revoke", self.on_revoke, "secondary"),
+                               ("users_add", self.on_add, "secondary"), ("users_remove", self.on_remove, "ghost")):
+            FlatButton(foot, tr(key), cmd, kind, small=True).pack(side="left", padx=(0, 6))
+        card_ = RoundCard(self, expand=True)
+        card_.configure(bg=SIDE)
+        card_.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+        self.tree = ttk.Treeview(card_.body, columns=cols, show="headings", selectmode="browse",
+                                 style="Chat.Treeview")
+        widths = {"name": 110, "title": 130, "device": 80, "pin": 60, "sessions": 60}
+        for c in cols:
+            self.tree.heading(c, text=tr("col_" + c))
+            self.tree.column(c, width=widths[c], anchor="w" if c in ("name", "title") else "center")
+        self.tree.pack(fill="both", expand=True, padx=6, pady=6)
+        self._load()
+
+    def _load(self):
+        self.tree.delete(*self.tree.get_children())
+        for u in self.team.list_users():
+            self.tree.insert("", "end", iid=u["id"], values=(
+                u["name"] + ("  ★" if u["role"] == "admin" else ""), u["title"], u["device"],
+                "🔒" if u["locked"] else ("✓" if u["has_pin"] else "—"), self.team.session_count(u["id"])))
+
+    def _selected(self):
+        sel = self.tree.selection()
+        return sel[0] if sel else None
+
+    def on_pin(self):
+        uid = self._selected()
+        if not uid:
+            return
+        pin = self.team.new_pin()
+        self.team.set_pin(uid, pin)
+        self.team.audit(f"user pin {uid}", "server-pc")
+        self._load()
+        messagebox.showinfo(settings.APP_NAME, self.app.tr("users_pin_done", u=self.team.users[uid]["name"], p=pin),
+                            parent=self)
+
+    def on_revoke(self):
+        uid = self._selected()
+        if not uid:
+            return
+        n = self.team.revoke_sessions(uid)
+        self.team.audit(f"user revoke {uid}", "server-pc")
+        self._load()
+        messagebox.showinfo(settings.APP_NAME, self.app.tr("users_revoked", n=n, u=self.team.users[uid]["name"]),
+                            parent=self)
+
+    def on_add(self):
+        from tkinter import simpledialog
+        tr = self.app.tr
+        name = simpledialog.askstring(settings.APP_NAME, tr("users_add_name"), parent=self)
+        if not name or not name.strip():
+            return
+        title = simpledialog.askstring(settings.APP_NAME, tr("users_add_title"), parent=self) or ""
+        android = messagebox.askyesno(settings.APP_NAME, tr("users_add_android"), parent=self)
+        try:
+            uid = self.team.add_user(name, title, "member", "android" if android else "laptop")
+        except ValueError as e:
+            messagebox.showerror(settings.APP_NAME, str(e), parent=self)
+            return
+        self.team.audit(f"user add {uid}", "server-pc")
+        self._load()
+        self.tree.selection_set(uid)
+
+    def on_remove(self):
+        uid = self._selected()
+        if not uid:
+            return
+        name = self.team.users[uid]["name"]
+        if messagebox.askyesno(settings.APP_NAME, self.app.tr("users_confirm_remove", u=name), parent=self):
+            self.team.remove_user(uid)
+            self.team.audit(f"user remove {uid}", "server-pc")
+            self._load()
+
+
 class App:
     def __init__(self, root):
         self.root = root
@@ -886,6 +1241,9 @@ class App:
         # Riwayat chat Claude selama app terbuka: [(peran, teks)].
         self.chat_history = []
         self.chat_win = None
+        # Server web HRGA (hanya di PC server).
+        self.server = None
+        self.apply_server_mode()
 
         root.title(settings.APP_NAME)
         root.geometry("1220x780")
@@ -936,6 +1294,29 @@ class App:
     def lang(self):
         return self.cfg["lang"]
 
+    def apply_server_mode(self):
+        """Nyalakan atau matikan server web HRGA sesuai pengaturan."""
+        want = self.cfg.get("server_mode", False)
+        if want and not self.server:
+            try:
+                self.server = ReportServer(settings.SERVER_DIR, asset("web"), cli=claude_ai.find_cli(),
+                                           lang=self.lang).start()
+            except OSError as e:
+                log.warning("Server gagal: %s", e)
+                self.server = None
+                messagebox.showerror(settings.APP_NAME, self.tr("server_failed", e=e))
+        elif not want and self.server:
+            self.server.stop()
+            self.server = None
+
+    @property
+    def is_team_admin(self):
+        return bool(self.server) or (self.cfg.get("server_role") == "admin" and bool(self.cfg.get("server_token")))
+
+    @property
+    def send_to_fena(self):
+        return self.cfg.get("send_to") == "fena"
+
     def tr(self, key, **kw):
         return t(self.lang, key, **kw)
 
@@ -944,6 +1325,7 @@ class App:
     def _styles(self):
         s = ttk.Style()
         s.configure("Card.TCheckbutton", background=CARD, font=(FONT, 9))
+        s.configure("Card.TRadiobutton", background=CARD, font=(FONT, 9))
         s.configure("Chat.Treeview", rowheight=30, font=(FONT, 10), background=CARD, fieldbackground=CARD,
                     borderwidth=0)
         s.configure("Chat.Treeview.Heading", font=(FONT, 9, "bold"), foreground=MUTED)
@@ -1048,6 +1430,9 @@ class App:
         self.buttons += [pull, gen]
         # Chat dengan Claude tetap bisa dipakai saat app sedang sibuk.
         FlatButton(inner, "💬  " + self.tr("chat"), self.on_chat).pack(fill="x", pady=(6, 0))
+        # Rekap Tim hanya untuk admin server (Fena, IT) dan di PC server.
+        if self.is_team_admin:
+            FlatButton(inner, "👥  " + self.tr("team"), lambda: TeamWindow(self)).pack(fill="x", pady=(6, 0))
 
         # Panel progres: nama proses, persentase, lalu "Complete" saat selesai.
         box = RoundCard(inner)
@@ -1086,7 +1471,7 @@ class App:
         card_ = RoundCard(main)
         card_.pack(fill="x", padx=24, pady=(0, 14))
         box = card_.body
-        label(box, self.tr("timeline_title"), 10, TEXT, True, bg=CARD).pack(anchor="w", padx=16, pady=(12, 0))
+        label(box, self.tr("timeline_title_fena" if self.send_to_fena else "timeline_title"), 10, TEXT, True, bg=CARD).pack(anchor="w", padx=16, pady=(12, 0))
         self.timeline = tk.Canvas(box, height=78, bg=CARD, highlightthickness=0)
         self.timeline.pack(fill="x", padx=10, pady=(0, 6))
         self.timeline.bind("<Configure>", lambda e: self._draw_timeline())
@@ -1147,8 +1532,11 @@ class App:
         box = card_.body
         head = self._card_header(box, self.tr("draft_title"), self.tr("draft_hint"))
         has_group = bool(self.cfg["group"])
-        send = FlatButton(head, self.tr("send_group" if has_group else "send"),
-                          self.on_send_group if has_group else self.on_send, "primary", small=True)
+        if self.send_to_fena:
+            send = FlatButton(head, self.tr("send_fena"), self.on_send_fena, "primary", small=True)
+        else:
+            send = FlatButton(head, self.tr("send_group" if has_group else "send"),
+                              self.on_send_group if has_group else self.on_send, "primary", small=True)
         send.pack(side="right")
         pdf = FlatButton(head, self.tr("pdf"), self.on_pdf, small=True)
         pdf.pack(side="right", padx=(0, 6))
@@ -1798,6 +2186,8 @@ class App:
                 self.events.put(("claude", "missing"))
                 return
             self.claude_cli = cli
+            if self.server:
+                self.server.cli = cli
             try:
                 ok = claude_ai.status(cli).get("loggedIn")
             except Exception as e:
@@ -2024,6 +2414,29 @@ class App:
             self.events.put(("info", self.tr("sent")))
 
         self._run(self.tr("opening"), work)
+
+    def on_send_fena(self):
+        if not (self.cfg.get("server_url") and self.cfg.get("server_token")):
+            messagebox.showinfo(settings.APP_NAME, self.tr("need_server_login"))
+            return
+        prepared = self._prepare_send(self.tr("confirm_send_fena"))
+        if not prepared:
+            return
+        day, text = prepared
+
+        def work():
+            self._progress(50, self.tr("sending_fena"))
+            c = client.Client(self.cfg["server_url"], self.cfg["server_token"])
+            try:
+                c.submit(day, text)
+            except client.ServerError as e:
+                if e.status == 401:
+                    raise RuntimeError(self.tr("need_server_login"))
+                raise RuntimeError(str(e))
+            self.events.put(("history", history.mark_sent(settings.HISTORY_FILE, day)))
+            self.events.put(("info", self.tr("sent_fena")))
+
+        self._run(self.tr("sending_fena"), work)
 
     def on_send_group(self):
         group = self.cfg["group"]
