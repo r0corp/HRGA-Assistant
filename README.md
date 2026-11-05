@@ -7,7 +7,7 @@ App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report den
 ## Alur & relasi aplikasi
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph LAPTOP["Laptop tim HRGA (app .exe)"]
         WA["WhatsApp Web<br/>(Edge headless)"] -->|Tarik Chat| APP["HRGA WA Report"]
         NOTE["Catatan manual"] --> APP
