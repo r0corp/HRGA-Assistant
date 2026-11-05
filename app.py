@@ -651,6 +651,7 @@ class ChatWindow(tk.Toplevel):
             pass
         self.session = None
         self.reply = []  # potongan jawaban yang sedang mengalir
+        self.ask_day = None  # tanggal draf saat pertanyaan dikirim
         self.v_ctx = tk.BooleanVar(value=True)
 
         # Kop seperti sidebar: judul, garis merah, latar abu-abu muda.
@@ -734,18 +735,40 @@ class ChatWindow(tk.Toplevel):
                 self._apply_button(report)
 
     def _apply_button(self, report):
+        """Tombol untuk memasang lagi report dari jawaban lama di riwayat chat."""
         btn = FlatButton(self.log, "✓  " + self.app.tr("chat_apply"),
-                         lambda: self._apply(report), small=True)
+                         lambda: self._apply(report, [], self.app.note_day), small=True)
         self.log.window_create("end", window=btn, padx=0, pady=4)
         self._write("\n")
 
-    def _apply(self, report):
-        day = self.app.note_day
+    def _apply(self, report, notes, day):
+        """Pasang report dari Claude ke draf tanggal itu, dan simpan pekerjaan di luar chat sebagai catatan."""
+        app = self.app
         if not day:
             return
-        self.app._replace_draft(day, compact_report(report))
-        self.app.status.set(self.app.tr("chat_applied"))
-        self._write(self.app.tr("chat_applied") + "\n", "muted")
+        if report:
+            # Judul selalu disamakan dengan judul resmi supaya formatnya tidak melenceng.
+            title = report_title(day, app.cfg["name"], app.lang)
+            app._replace_draft(day, compact_report(claude_ai.tidy(report, title)))
+            if day == app.note_day:
+                app._show_day_strip()
+        added = []
+        if notes:
+            current = app.notes if day == app.note_day else load_notes(day)
+            known = {" ".join(n.lower().split()) for n in current}
+            added = [n for n in notes if " ".join(n.lower().split()) not in known]
+            if added:
+                if day == app.note_day:
+                    app._note_snapshot()
+                    app._apply_notes([n for n in app.notes if n.strip()] + added)
+                else:
+                    save_notes(day, [n for n in current if n.strip()] + added)
+        if report or added:
+            msg = app.tr("chat_applied") if report else ""
+            if added:
+                msg = (msg + " " + app.tr("chat_notes_added", n=len(added))).strip()
+            app.status.set(msg)
+            self._write("✓ " + msg + "\n", "muted")
 
     def _set_running(self, on):
         self.send_btn.configure(state="disabled" if on else "normal")
@@ -776,7 +799,9 @@ class ChatWindow(tk.Toplevel):
         if self.v_ctx.get() and day:
             picked = {n: app.chats[n] for n in app.table.checked() if n in app.chats} or app.chats
             context = chat.context_text(app._report_text(), picked, day, app.cfg["start_hour"],
-                                        app.cfg["end_hour"], app.cfg["name"], app.cfg["routine"], app.notes)
+                                        app.cfg["end_hour"], app.cfg["name"], app.cfg["routine"], app.notes,
+                                        report_title(day, app.cfg["name"], app.lang))
+        self.ask_day = day
         prompt = chat.build_prompt(app.chat_history, message, context)
         history = app.chat_history
         history.append(("user", message))
@@ -812,9 +837,9 @@ class ChatWindow(tk.Toplevel):
         if text.strip():
             self.app.chat_history.append(("assistant", text))
             self._write(chat.display_text(text) + "\n", "ai")
-            report = chat.extract_report(text)
-            if report:
-                self._apply_button(report)
+            # Report baru langsung masuk ke draf (Ctrl+Z di draf untuk membatalkan),
+            # dan pekerjaan di luar chat masuk ke catatan manual supaya ikut saat Generate ulang.
+            self._apply(chat.extract_report(text), chat.extract_notes(text), self.ask_day)
         else:
             self._write(self.app.tr("chat_stopped") + "\n", "muted")
             # Pertanyaan tanpa jawaban dibuang dari riwayat supaya tidak membingungkan Claude.

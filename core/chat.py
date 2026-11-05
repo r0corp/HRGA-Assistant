@@ -25,18 +25,31 @@ singkat pesannya. Kalau tidak ada dasarnya di chat, katakan terus terang. Kalau 
 bukan kerjaan saya", "sebenarnya sudah selesai"), percayai koreksi penulis dan tawarkan report yang sudah diperbaiki.
 Kalau ada hal yang kurang jelas, boleh balik bertanya ke penulis.
 
-Kalau penulis minta report diubah atau dibuatkan ulang, tulis report LENGKAP versi barunya di antara
-baris [REPORT] dan [/REPORT] (masing-masing di baris sendiri), dengan format yang sama: judul "Daily Report ...",
-satu baris kosong, lalu daftar bernomor rapat tanpa baris kosong di antara nomor. Penjelasan singkat boleh
-ditulis di luar blok itu. Jangan mengarang pekerjaan yang tidak ada di chat atau draf.
+Setiap kali kamu menulis report (diubah, ditambah, dihapus, atau dibuat ulang), WAJIB tulis report LENGKAP
+versi barunya di antara baris [REPORT] dan [/REPORT] (masing-masing di baris sendiri). Aplikasi langsung
+memasang isi blok itu ke draf, jadi report di luar blok tidak akan tersimpan. Format: baris pertama persis
+judul report dari konteks, satu baris kosong, lalu daftar bernomor rapat tanpa baris kosong di antara nomor.
+Penjelasan singkat boleh ditulis di luar blok itu.
+
+Kalau penulis menyebut pekerjaan yang TIDAK ada di chat WhatsApp (mis. "tambahkan: perbaikan laptop Ilham"),
+selain memasukkannya ke report, tulis juga setiap pekerjaan itu di blok [CATATAN] ... [/CATATAN] (satu blok per
+pekerjaan, isi singkat seperti catatan manual). Aplikasi menyimpannya sebagai catatan manual supaya tetap ikut
+saat report di-generate ulang. Jangan buat [CATATAN] untuk pekerjaan yang sudah ada di chat, item rutin, atau
+yang sudah ada di daftar catatan manual. Jangan mengarang pekerjaan yang tidak ada di chat, catatan, atau
+ucapan penulis.
 Jangan pernah menulis password, OTP, PIN, atau nomor rekening."""
 
 REPORT_RE = re.compile(r"\[REPORT\]\s*\n(.*?)\n\s*\[/REPORT\]", re.S)
+NOTE_RE = re.compile(r"\[CATATAN\]\s*(.*?)\s*\[/CATATAN\]", re.S)
+# Cadangan kalau Claude lupa penanda: judul "Daily Report" diikuti daftar bernomor.
+LOOSE_RE = re.compile(r"^(Daily Report[^\n]*)\n+((?:(?:\d+\.|-)\s[^\n]*\n?|[ \t]+[^\n]*\n?)+)", re.M)
 
 
-def context_text(draft, chats, day, start_hour, end_hour, name="", routine=(), notes=()):
+def context_text(draft, chats, day, start_hour, end_hour, name="", routine=(), notes=(), title=""):
     """Konteks tanggal yang sedang dibuka: draf report, item rutin, catatan manual, dan chat kerja."""
     parts = [f"Penulis report: {name or '-'}. Tanggal report: {day.isoformat()}."]
+    if title:
+        parts.append(f"Judul report (pakai persis): {title}")
     parts.append("Draf report saat ini:\n" + (draft.strip() or "(masih kosong)"))
     if routine:
         parts.append("Item rutin (pekerjaan harian tetap dari pengaturan, memang tidak ada di chat):\n"
@@ -64,14 +77,28 @@ def build_prompt(history, message, context=""):
 
 
 def extract_report(text):
-    """Isi blok [REPORT]...[/REPORT] terakhir, atau None."""
-    found = REPORT_RE.findall(text or "")
-    return found[-1].strip() if found else None
+    """Isi blok [REPORT]...[/REPORT] terakhir; kalau tidak ada, report tanpa penanda; atau None."""
+    text = NOTE_RE.sub("", text or "")
+    found = REPORT_RE.findall(text)
+    if found:
+        return found[-1].strip()
+    loose = LOOSE_RE.findall(text)
+    if loose:
+        head, body = loose[-1]
+        return f"{head.strip()}\n\n{body.strip()}"
+    return None
+
+
+def extract_notes(text):
+    """Pekerjaan di luar chat dari blok [CATATAN]...[/CATATAN]."""
+    return [" ".join(n.split()) for n in NOTE_RE.findall(text or "") if n.strip()]
 
 
 def display_text(text):
-    """Teks jawaban tanpa penanda [REPORT]/[/REPORT]."""
-    return re.sub(r"^\s*\[/?REPORT\]\s*$\n?", "", text or "", flags=re.M).replace("**", "").strip()
+    """Teks jawaban tanpa penanda [REPORT] dan tanpa blok [CATATAN]."""
+    text = NOTE_RE.sub("", text or "")
+    text = re.sub(r"^\s*\[/?REPORT\]\s*$\n?", "", text, flags=re.M)
+    return re.sub(r"\n{3,}", "\n\n", text).replace("**", "").strip()
 
 
 class Session:

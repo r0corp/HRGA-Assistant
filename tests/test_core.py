@@ -262,3 +262,14 @@ def test_chat_prompt_and_report_block():
     assert chat.extract_report(reply) == "Daily Report X.\n\n1. A"
     assert "[REPORT]" not in chat.display_text(reply)
     assert chat.extract_report("tanpa blok") is None
+
+
+def test_chat_report_without_markers_and_notes():
+    from core import chat
+    reply = ("Siap, ini report terbarunya.\nDaily Report Kamis, 05 November 2026\n\n"
+             "1. Remote Kyocera.\n2. Perbaikan laptop Ilham.\n- cache dibersihkan.\n"
+             "Poin 1 adalah item rutin.\n[CATATAN]Perbaikan laptop Ilham: cache dibersihkan.[/CATATAN]")
+    assert chat.extract_report(reply) == ("Daily Report Kamis, 05 November 2026\n\n"
+                                          "1. Remote Kyocera.\n2. Perbaikan laptop Ilham.\n- cache dibersihkan.")
+    assert chat.extract_notes(reply) == ["Perbaikan laptop Ilham: cache dibersihkan."]
+    assert "[CATATAN]" not in chat.display_text(reply)
