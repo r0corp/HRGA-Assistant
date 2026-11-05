@@ -542,7 +542,10 @@ class SettingsDialog(tk.Toplevel):
         self.v_server = tk.BooleanVar(value=cfg.get("server_mode", False))
         box = self._group(left, tr("srv_section"))
         logged = bool(cfg.get("server_token"))
-        self._account_row(box, logged, tr("srv_on", u=cfg.get("server_user", "")), tr("srv_off"),
+        who = cfg.get("server_user", "")
+        if cfg.get("server_role") in team.ROLES:
+            who += " (" + tr("role_" + cfg["server_role"]) + ")"
+        self._account_row(box, logged, tr("srv_on", u=who), tr("srv_off"),
                           tr("srv_logout") if logged else tr("srv_login"),
                           self._server_logout if logged else self._server_login)
         self._field(box, tr("srv_url"), ttk.Entry(box, textvariable=self.v_url, width=40), tr("srv_url_hint"))
@@ -552,6 +555,8 @@ class SettingsDialog(tk.Toplevel):
                             style="Card.TRadiobutton").pack(anchor="w")
         ttk.Checkbutton(box, text=tr("server_mode"), variable=self.v_server, style="Card.TCheckbutton").pack(
             anchor="w", pady=(8, 0))
+        if logged and not app.server and app.is_user_admin:
+            FlatButton(box, tr("users"), lambda: UsersWindow(app, self), small=True).pack(anchor="w", pady=(8, 0))
         if app.server:
             row = tk.Frame(box, bg=CARD)
             row.pack(fill="x", pady=(4, 0))
@@ -1153,64 +1158,166 @@ class TeamWindow(SmallWindow):
         os.startfile(path)
 
 
+class LocalUsers:
+    """Kelola user langsung di data server (app ini sendiri yang menjadi server)."""
+
+    def __init__(self, team_):
+        self.team = team_
+
+    def list(self):
+        users = self.team.list_users()
+        for u in users:
+            u["sessions"] = self.team.session_count(u["id"])
+        return users
+
+    def reset_pin(self, uid):
+        pin = self.team.new_pin()
+        self.team.set_pin(uid, pin)
+        self.team.audit(f"user pin {uid}", "server-pc")
+        return pin
+
+    def revoke(self, uid):
+        self.team.audit(f"user revoke {uid}", "server-pc")
+        return self.team.revoke_sessions(uid)
+
+    def add(self, name, title, role, device):
+        uid = self.team.add_user(name, title, role, device)
+        self.team.audit(f"user add {uid}", "server-pc")
+        return uid
+
+    def set_role(self, uid, role):
+        self.team.update_user(uid, role=role)
+        self.team.audit(f"user update {uid}", "server-pc")
+
+    def remove(self, uid):
+        self.team.remove_user(uid)
+        self.team.audit(f"user remove {uid}", "server-pc")
+
+
+class RemoteUsers:
+    """Kelola user lewat API server HRGA (laptop IT Support yang login sebagai Administrator)."""
+
+    def __init__(self, c):
+        self.c = c
+
+    def _post(self, **data):
+        try:
+            return self.c._call("POST", "/api/users", data)
+        except client.ServerError as e:
+            raise ValueError(str(e))
+
+    def list(self):
+        try:
+            return self.c._call("GET", "/api/users")["users"]
+        except client.ServerError as e:
+            raise ValueError(str(e))
+
+    def reset_pin(self, uid):
+        return self._post(action="pin", id=uid)["pin"]
+
+    def revoke(self, uid):
+        return self._post(action="revoke", id=uid).get("revoked", 0)
+
+    def add(self, name, title, role, device):
+        self._post(action="add", name=name, title=title, role=role, device=device)
+        return team.user_id(name)
+
+    def set_role(self, uid, role):
+        self._post(action="update", id=uid, role=role)
+
+    def remove(self, uid):
+        self._post(action="remove", id=uid)
+
+
 class UsersWindow(SmallWindow):
-    """Kelola user server HRGA (khusus PC server): PIN, cabut login, tambah, hapus."""
+    """Kelola user server HRGA (Administrator / IT Support): PIN, peran, cabut login, tambah, hapus."""
 
     def __init__(self, app, parent=None):
-        super().__init__(app, app.tr("users_title"), (560, 430), parent)
+        super().__init__(app, app.tr("users_title"), (660, 440), parent)
         self.transient(parent or app.root)
         self.grab_set()
         tr = app.tr
-        self.team = app.server.team
-        cols = ("name", "title", "device", "pin", "sessions")
+        self.backend = LocalUsers(app.server.team) if app.server else RemoteUsers(app.server_client())
+        self.users = {}
+        cols = ("name", "title", "role", "device", "pin", "sessions")
         foot = tk.Frame(self, bg=SIDE)
         foot.pack(side="bottom", fill="x", padx=14, pady=(0, 12))
-        for key, cmd, kind in (("users_pin", self.on_pin, "primary"), ("users_revoke", self.on_revoke, "secondary"),
-                               ("users_add", self.on_add, "secondary"), ("users_remove", self.on_remove, "ghost")):
+        for key, cmd, kind in (("users_pin", self.on_pin, "primary"), ("users_role", self.on_role, "secondary"),
+                               ("users_revoke", self.on_revoke, "secondary"), ("users_add", self.on_add, "secondary"),
+                               ("users_remove", self.on_remove, "ghost")):
             FlatButton(foot, tr(key), cmd, kind, small=True).pack(side="left", padx=(0, 6))
         card_ = RoundCard(self, expand=True)
         card_.configure(bg=SIDE)
         card_.pack(fill="both", expand=True, padx=14, pady=(0, 8))
         self.tree = ttk.Treeview(card_.body, columns=cols, show="headings", selectmode="browse",
                                  style="Chat.Treeview")
-        widths = {"name": 110, "title": 130, "device": 80, "pin": 60, "sessions": 60}
+        widths = {"name": 100, "title": 120, "role": 105, "device": 75, "pin": 50, "sessions": 55}
         for c in cols:
             self.tree.heading(c, text=tr("col_" + c))
-            self.tree.column(c, width=widths[c], anchor="w" if c in ("name", "title") else "center")
+            self.tree.column(c, width=widths[c], anchor="w" if c in ("name", "title", "role") else "center")
         self.tree.pack(fill="both", expand=True, padx=6, pady=6)
         self._load()
 
+    def _error(self, e):
+        messagebox.showerror(settings.APP_NAME, str(e), parent=self)
+
     def _load(self):
+        try:
+            users = self.backend.list()
+        except ValueError as e:
+            self._error(e)
+            return
+        self.users = {u["id"]: u for u in users}
         self.tree.delete(*self.tree.get_children())
-        for u in self.team.list_users():
+        for u in users:
             self.tree.insert("", "end", iid=u["id"], values=(
-                u["name"] + ("  ★" if u["role"] == "admin" else ""), u["title"], u["device"],
-                "🔒" if u["locked"] else ("✓" if u["has_pin"] else "—"), self.team.session_count(u["id"])))
+                u["name"], u["title"], self.app.tr("role_" + u["role"]), u["device"],
+                "\U0001f512" if u["locked"] else ("\u2713" if u["has_pin"] else "\u2014"), u.get("sessions", 0)))
 
     def _selected(self):
         sel = self.tree.selection()
         return sel[0] if sel else None
 
+    def _name(self, uid):
+        return self.users.get(uid, {}).get("name", uid)
+
     def on_pin(self):
         uid = self._selected()
         if not uid:
             return
-        pin = self.team.new_pin()
-        self.team.set_pin(uid, pin)
-        self.team.audit(f"user pin {uid}", "server-pc")
+        try:
+            pin = self.backend.reset_pin(uid)
+        except ValueError as e:
+            return self._error(e)
         self._load()
-        messagebox.showinfo(settings.APP_NAME, self.app.tr("users_pin_done", u=self.team.users[uid]["name"], p=pin),
-                            parent=self)
+        messagebox.showinfo(settings.APP_NAME, self.app.tr("users_pin_done", u=self._name(uid), p=pin), parent=self)
+
+    def on_role(self):
+        uid = self._selected()
+        if not uid:
+            return
+        menu = tk.Menu(self, tearoff=0)
+        for role in team.ROLES:
+            menu.add_command(label=self.app.tr("role_" + role), command=lambda r=role: self._set_role(uid, r))
+        menu.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
+
+    def _set_role(self, uid, role):
+        try:
+            self.backend.set_role(uid, role)
+        except ValueError as e:
+            return self._error(e)
+        self._load()
 
     def on_revoke(self):
         uid = self._selected()
         if not uid:
             return
-        n = self.team.revoke_sessions(uid)
-        self.team.audit(f"user revoke {uid}", "server-pc")
+        try:
+            n = self.backend.revoke(uid)
+        except ValueError as e:
+            return self._error(e)
         self._load()
-        messagebox.showinfo(settings.APP_NAME, self.app.tr("users_revoked", n=n, u=self.team.users[uid]["name"]),
-                            parent=self)
+        messagebox.showinfo(settings.APP_NAME, self.app.tr("users_revoked", n=n, u=self._name(uid)), parent=self)
 
     def on_add(self):
         from tkinter import simpledialog
@@ -1221,22 +1328,22 @@ class UsersWindow(SmallWindow):
         title = simpledialog.askstring(settings.APP_NAME, tr("users_add_title"), parent=self) or ""
         android = messagebox.askyesno(settings.APP_NAME, tr("users_add_android"), parent=self)
         try:
-            uid = self.team.add_user(name, title, "member", "android" if android else "laptop")
+            uid = self.backend.add(name.strip(), title.strip(), "member", "android" if android else "laptop")
         except ValueError as e:
-            messagebox.showerror(settings.APP_NAME, str(e), parent=self)
-            return
-        self.team.audit(f"user add {uid}", "server-pc")
+            return self._error(e)
         self._load()
-        self.tree.selection_set(uid)
+        if uid in self.users:
+            self.tree.selection_set(uid)
 
     def on_remove(self):
         uid = self._selected()
         if not uid:
             return
-        name = self.team.users[uid]["name"]
-        if messagebox.askyesno(settings.APP_NAME, self.app.tr("users_confirm_remove", u=name), parent=self):
-            self.team.remove_user(uid)
-            self.team.audit(f"user remove {uid}", "server-pc")
+        if messagebox.askyesno(settings.APP_NAME, self.app.tr("users_confirm_remove", u=self._name(uid)), parent=self):
+            try:
+                self.backend.remove(uid)
+            except ValueError as e:
+                return self._error(e)
             self._load()
 
 
@@ -1335,7 +1442,13 @@ class App:
 
     @property
     def is_team_admin(self):
-        return bool(self.server) or (self.cfg.get("server_role") == "admin" and bool(self.cfg.get("server_token")))
+        """Boleh membuka Rekap Tim: Supervisor (Fena) dan Administrator (IT Support)."""
+        return bool(self.server) or (self.cfg.get("server_role") in team.RECAP_ROLES and self.server_login)
+
+    @property
+    def is_user_admin(self):
+        """Boleh kelola user server: hanya Administrator (IT Support) atau PC server sendiri."""
+        return bool(self.server) or (self.cfg.get("server_role") == "admin" and self.server_login)
 
     @property
     def server_login(self):

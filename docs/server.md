@@ -41,12 +41,12 @@ Funnel hanya meneruskan HTTPS ke `127.0.0.1:8500`, jadi PC server tidak membuka 
 
 ## 3. Buat PIN tiap orang
 
-Di PC server buka Pengaturan → **Kelola user**:
+IT Support (Administrator) membuka Pengaturan → Server HRGA → **Kelola user** di app laptopnya (atau di PC server bila memakai app berjendela):
 
 - Pilih nama → **Buat PIN baru**. PIN 6 angka hanya tampil sekali; berikan langsung ke orangnya, jangan lewat grup.
 - **Cabut login** untuk keluar paksa dari semua perangkat orang itu, misalnya kalau HP hilang.
 - **Tambah** atau **Hapus** untuk anggota baru atau yang keluar.
-- Fena dan Rohman (★) adalah admin: bisa membuka Rekap Tim.
+- Peran: **Administrator** (IT Support) bisa kelola user dan Rekap Tim; **Supervisor** (Fena) bisa Rekap Tim; **Anggota** hanya report sendiri. Minimal harus ada satu Administrator.
 
 ## Laptop tanpa Claude (mis. Winny)
 

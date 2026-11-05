@@ -12,7 +12,7 @@ def test_seed_and_pin(tmp_path):
     t = T.Team(str(tmp_path))
     names = [u["name"] for u in t.list_users()]
     assert names[:2] == ["Fena", "Rohman"] and "Taufik" in names and len(names) == 9
-    assert t.public("fena")["role"] == "admin" and t.public("ari")["device"] == "android"
+    assert t.public("fena")["role"] == "supervisor" and t.public("rohman")["role"] == "admin" and t.public("ari")["device"] == "android"
     # Belum ada PIN: tidak bisa login.
     with pytest.raises(T.AuthError):
         t.login("Ari", "123456")
@@ -80,3 +80,16 @@ def test_add_remove_user(tmp_path):
         t.add_user("Budi Santoso")
     t.remove_user(uid)
     assert t.find("Budi Santoso") is None
+
+
+def test_roles_keep_one_admin(tmp_path):
+    t = T.Team(str(tmp_path))
+    with pytest.raises(ValueError, match="Administrator"):
+        t.update_user("rohman", role="member")
+    with pytest.raises(ValueError, match="Administrator"):
+        t.remove_user("rohman")
+    with pytest.raises(ValueError):
+        t.update_user("ari", role="bos")
+    t.update_user("fena", role="admin")
+    t.update_user("rohman", role="member")
+    assert t.public("rohman")["role"] == "member"

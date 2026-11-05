@@ -117,3 +117,23 @@ def test_generate_and_chat_for_laptop_without_claude(srv):
     with pytest.raises(ServerError) as e:
         Client(url(srv)).chat([], "halo")
     assert e.value.status == 401
+
+
+def test_supervisor_recap_admin_users(srv):
+    srv.team.set_pin("rohman", "444444")
+    fena = Client(url(srv))
+    fena.login("Fena", "222222")
+    assert fena.team(date.today())["rows"]
+    # Supervisor tidak boleh kelola user.
+    with pytest.raises(ServerError) as e:
+        fena._call("GET", "/api/users")
+    assert e.value.status == 403
+    it = Client(url(srv))
+    it.login("Rohman", "444444")
+    users = {u["id"]: u for u in it._call("GET", "/api/users")["users"]}
+    assert users["rohman"]["role"] == "admin" and users["fena"]["role"] == "supervisor"
+    pin = it._call("POST", "/api/users", {"action": "pin", "id": "ari"})["pin"]
+    assert Client(url(srv)).login("Ari", pin)["name"] == "Ari"
+    with pytest.raises(ServerError) as e:
+        it._call("POST", "/api/users", {"action": "update", "id": "rohman", "role": "member"})
+    assert e.value.status == 400

@@ -68,7 +68,7 @@ function showApp() {
   $("who-name").textContent = me.name;
   $("who").classList.remove("hidden");
   $("tabs").classList.remove("hidden");
-  for (const el of document.querySelectorAll(".admin-only")) el.classList.toggle("hidden", me.role !== "admin");
+  for (const el of document.querySelectorAll(".admin-only")) el.classList.toggle("hidden", !["admin", "supervisor"].includes(me.role));
   $("day").max = today();
   $("day").value = today();
   $("team-day").value = today();

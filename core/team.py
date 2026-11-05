@@ -22,9 +22,13 @@ SESSION_IDLE = 30 * 24 * 3600
 # Sesi tidak perlu ditulis ke disk setiap request; cukup kalau sudah lewat 1 jam.
 TOUCH_EVERY = 3600
 
-# Anggota awal tim HRGA PT Tradecorp Indonesia. PIN diset admin dari app server.
+# Peran: admin (IT Support: kelola user + Rekap Tim), supervisor (Rekap Tim), member (report sendiri).
+ROLES = ("admin", "supervisor", "member")
+RECAP_ROLES = ("admin", "supervisor")
+
+# Anggota awal tim HRGA PT Tradecorp Indonesia. PIN diset administrator (IT Support).
 SEED = [
-    ("Fena", "HRGA Spv", "admin", "laptop"),
+    ("Fena", "HRGA Spv", "supervisor", "laptop"),
     ("Rohman", "IT Support", "admin", "laptop"),
     ("Fara", "Admin HRGA", "member", "laptop"),
     ("Taufan", "HR Recruitment", "member", "laptop"),
@@ -139,7 +143,7 @@ class Team:
         uid = user_id(name)
         if not uid:
             raise ValueError("Nama kosong")
-        if role not in ("admin", "member") or device not in ("laptop", "android"):
+        if role not in ROLES or device not in ("laptop", "android"):
             raise ValueError("Peran atau perangkat tidak dikenal")
         with self.lock:
             if uid in self.users:
@@ -148,9 +152,22 @@ class Team:
             self._save_users()
         return uid
 
+    def _check_last_admin(self, uid):
+        """Minimal harus ada satu administrator supaya user tetap bisa dikelola."""
+        admins = [k for k, u in self.users.items() if u["role"] == "admin"]
+        if admins == [uid]:
+            raise ValueError("Harus ada minimal satu Administrator")
+
     def update_user(self, uid, **fields):
+        role = fields.get("role")
+        if role is not None and role not in ROLES:
+            raise ValueError("Peran tidak dikenal")
+        if fields.get("device") is not None and fields["device"] not in ("laptop", "android"):
+            raise ValueError("Perangkat tidak dikenal")
         with self.lock:
             u = self.users[uid]
+            if role is not None and role != "admin" and u["role"] == "admin":
+                self._check_last_admin(uid)
             for key in ("title", "role", "device", "routine"):
                 if key in fields and fields[key] is not None:
                     u[key] = fields[key]
@@ -158,6 +175,8 @@ class Team:
 
     def remove_user(self, uid):
         with self.lock:
+            if self.users.get(uid, {}).get("role") == "admin":
+                self._check_last_admin(uid)
             self.users.pop(uid, None)
             self.revoke_sessions(uid)
             self._save_users()

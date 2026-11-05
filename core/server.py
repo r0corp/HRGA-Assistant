@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from core import chat, claude_ai
 from core.redact import redact
 from core.summary import report_title
-from core.team import AuthError, Team, parse_day, recap_text
+from core.team import RECAP_ROLES, AuthError, Team, parse_day, recap_text
 
 log = logging.getLogger("server")
 
@@ -162,12 +162,15 @@ class _Handler(BaseHTTPRequestHandler):
             raise HttpError(400, "Format data salah")
         return data
 
-    def user(self, admin=False):
+    def user(self, admin=False, recap=False):
         uid = self.app.team.session_user(self.token())
         if not uid:
             raise HttpError(401, "Silakan login dulu")
-        if admin and self.app.team.users[uid]["role"] != "admin":
-            raise HttpError(403, "Hanya untuk admin")
+        role = self.app.team.users[uid]["role"]
+        if admin and role != "admin":
+            raise HttpError(403, "Hanya untuk Administrator (IT Support)")
+        if recap and role not in RECAP_ROLES:
+            raise HttpError(403, "Hanya untuk Supervisor dan Administrator")
         return uid
 
     def day(self, value, uid):
@@ -175,7 +178,7 @@ class _Handler(BaseHTTPRequestHandler):
         if d is None:
             raise HttpError(400, "Tanggal salah")
         # Anggota hanya boleh mengisi report sampai 31 hari ke belakang.
-        if self.app.team.users[uid]["role"] != "admin" and not (
+        if self.app.team.users[uid]["role"] not in RECAP_ROLES and not (
                 date.today() - timedelta(days=31) <= d <= date.today()):
             raise HttpError(400, "Tanggal di luar batas")
         return d
@@ -373,7 +376,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send(200, {"items": self.app.team.history(uid, days)})
 
     def api_team(self):
-        self.user(admin=True)
+        self.user(recap=True)
         q = parse_qs(urlparse(self.path).query)
         d = parse_day(q.get("date", [""])[0]) or date.today()
         rows = self.app.team.recap(d)
