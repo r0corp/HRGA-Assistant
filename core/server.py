@@ -25,6 +25,8 @@ log = logging.getLogger("server")
 PORT = 8400
 COOKIE = "hrga_session"
 MAX_BODY = 64 * 1024
+# Generate dan Chat dari laptop membawa isi chat WhatsApp sehari, jadi batasnya lebih besar.
+MAX_BIG_BODY = 2 * 1024 * 1024
 # Batas percobaan login gagal per alamat IP (selain kunci per akun).
 IP_MAX_FAILS = 20
 IP_WINDOW = 15 * 60
@@ -147,9 +149,9 @@ class _Handler(BaseHTTPRequestHandler):
         jar = cookies.SimpleCookie(self.headers.get("Cookie", ""))
         return jar[COOKIE].value if COOKIE in jar else None
 
-    def body(self):
+    def body(self, limit=MAX_BODY):
         length = int(self.headers.get("Content-Length") or 0)
-        if length > MAX_BODY:
+        if length > limit:
             raise HttpError(413, "Data terlalu besar")
         raw = self.rfile.read(length) if length else b"{}"
         try:
@@ -330,6 +332,41 @@ class _Handler(BaseHTTPRequestHandler):
             self.app.team.save_report(d, uid, text, source=u["device"])
         self.send(200, {"text": text, "changed": bool(report), "reply": chat.reply_only(reply)})
 
+    def api_generate(self):
+        """Generate Report untuk laptop tanpa Claude: prompt disusun di server dari chat yang dikirim."""
+        uid = self.user()
+        data = self.body(MAX_BIG_BODY)
+        d = self.day(data.get("date"), uid)
+        u = self.app.team.users[uid]
+        lang = data.get("lang") if data.get("lang") in ("id", "en") else self.app.lang
+        try:
+            start, end = int(data.get("start_hour", 6)), int(data.get("end_hour", 17))
+        except (TypeError, ValueError):
+            raise HttpError(400, "Jam kerja salah")
+        chats = data.get("chats") or {}
+        if not isinstance(chats, dict):
+            raise HttpError(400, "Format chat salah")
+        strs = lambda key: [str(x) for x in (data.get(key) or [])][:50]
+        nick = {str(k): str(v) for k, v in (data.get("nicknames") or {}).items()}
+        prompt = claude_ai.build_prompt(chats, d, u["name"], start, end, lang, strs("routine"), strs("notes"), nick)
+        title = report_title(d, u["name"], lang)
+        text = self.app.claude(self.app.tidy_fn, prompt, title)
+        self.app.team.audit(f"generate {d.isoformat()}", uid, self.client_ip())
+        self.send(200, {"text": text})
+
+    def api_chat(self):
+        """Chat Claude untuk laptop tanpa Claude; riwayat dan konteks dikirim oleh app laptop."""
+        uid = self.user()
+        data = self.body(MAX_BIG_BODY)
+        message = str(data.get("message", "")).strip()
+        if not message:
+            raise HttpError(400, "Pesan kosong")
+        history = [(("user" if r == "user" else "assistant"), str(t)) for r, t in (data.get("history") or [])][-20:]
+        prompt = chat.build_prompt(history, message, str(data.get("context", "")))
+        reply = self.app.claude(self.app.ask_fn, prompt)
+        self.app.team.audit("chat", uid, self.client_ip())
+        self.send(200, {"text": reply})
+
     def api_history(self):
         uid = self.user()
         days = [date.today() - timedelta(days=i) for i in range(7)]
@@ -393,6 +430,8 @@ ROUTES = {
     ("POST", "/api/tidy"): _Handler.api_tidy,
     ("POST", "/api/revise"): _Handler.api_revise,
     ("GET", "/api/history"): _Handler.api_history,
+    ("POST", "/api/generate"): _Handler.api_generate,
+    ("POST", "/api/chat"): _Handler.api_chat,
     ("GET", "/api/team"): _Handler.api_team,
     ("GET", "/api/users"): _Handler.api_users_get,
     ("POST", "/api/users"): _Handler.api_users_post,

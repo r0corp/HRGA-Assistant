@@ -48,6 +48,10 @@ Di PC server buka Pengaturan → **Kelola user**:
 - **Tambah** atau **Hapus** untuk anggota baru atau yang keluar.
 - Fena dan Rohman (★) adalah admin: bisa membuka Rekap Tim.
 
+## Laptop tanpa Claude (mis. Winny)
+
+Kalau laptop seseorang tidak punya Claude (atau belum login Claude), app otomatis memakai **Claude di PC server (akun Fena)** setelah orang itu login ke server HRGA (Pengaturan → Server HRGA → Login). Status di sidebar menjadi **Claude lewat server HRGA**. Generate Report dan Chat Claude tetap bisa dipakai; WhatsApp tetap dibaca di laptopnya sendiri.
+
 ## Keamanan
 
 - PIN disimpan sebagai hash PBKDF2, bukan teks asli.

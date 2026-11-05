@@ -525,7 +525,10 @@ class SettingsDialog(tk.Toplevel):
 
         # Claude AI: status login akun Claude di laptop ini.
         box = self._group(left, tr("claude_section"))
-        if app.claude_state == "missing":
+        if app.claude_state == "server":
+            label(box, "●  " + tr("claude_server"), 9, GREEN).pack(anchor="w")
+            label(box, tr("claude_server_hint"), 8, MUTED, wraplength=280, justify="left").pack(anchor="w", pady=(4, 0))
+        elif app.claude_state == "missing":
             label(box, tr("claude_missing"), 9, MUTED).pack(anchor="w")
             label(box, tr("claude_install_hint"), 8, MUTED, wraplength=280, justify="left").pack(anchor="w", pady=(4, 0))
         else:
@@ -766,6 +769,16 @@ class SettingsDialog(tk.Toplevel):
 
 # ---------- jendela utama ----------
 
+class RemoteSession:
+    """Penanda chat yang sedang menunggu Claude di PC server; Stop membuang jawabannya."""
+
+    def __init__(self):
+        self.stopped = False
+
+    def stop(self):
+        self.stopped = True
+
+
 class ChatWindow(tk.Toplevel):
     """Chat dengan Claude; konteksnya draf dan chat WhatsApp tanggal yang sedang dibuka."""
 
@@ -919,7 +932,8 @@ class ChatWindow(tk.Toplevel):
         if not message:
             return
         app = self.app
-        if app.claude_state != "on" or not app.claude_cli:
+        remote = app.claude_state == "server"
+        if not remote and (app.claude_state != "on" or not app.claude_cli):
             messagebox.showinfo(settings.APP_NAME, app.tr("chat_no_claude"), parent=self)
             return
         self.input.delete("1.0", "end")
@@ -939,14 +953,19 @@ class ChatWindow(tk.Toplevel):
                                         report_title(day, app.cfg["name"], app.lang))
         self.ask_day = day
         prompt = chat.build_prompt(app.chat_history, message, context)
-        history = app.chat_history
-        history.append(("user", message))
+        past = list(app.chat_history)
+        app.chat_history.append(("user", message))
         self.reply = []
-        self.session = session = chat.Session(app.claude_cli)
+        self.session = session = RemoteSession() if remote else chat.Session(app.claude_cli)
         self._set_running(True)
 
         def target():
             try:
+                if remote:
+                    # Laptop tanpa Claude: jawaban dari Claude di PC server (tidak dialirkan).
+                    text = app.server_client().chat(past, message, context)
+                    app.events.put(("chat_done", "" if session.stopped else text))
+                    return
                 text = session.ask(prompt, lambda part: app.events.put(("chat_part", part)))
                 app.events.put(("chat_done", text))
             except Exception as e:
@@ -1235,6 +1254,8 @@ class App:
         # Status Claude: None belum dicek, "on", "off" (belum login), "missing" (tidak terpasang).
         self.claude_state = None
         self.claude_cli = None
+        # Status Claude di laptop ini sendiri (claude_state bisa "server" kalau memakai Claude PC server).
+        self.claude_local = None
         self.history = history.load(settings.HISTORY_FILE)
         # Panel progres: None (belum ada proses) atau (persen, judul, keterangan, status).
         self.prog_state = None
@@ -1308,10 +1329,26 @@ class App:
         elif not want and self.server:
             self.server.stop()
             self.server = None
+        # Login/logout server bisa mengubah sumber Claude laptop ini.
+        if getattr(self, "claude_local", None) is not None:
+            self.claude_state = self._effective_claude(self.claude_local)
 
     @property
     def is_team_admin(self):
         return bool(self.server) or (self.cfg.get("server_role") == "admin" and bool(self.cfg.get("server_token")))
+
+    @property
+    def server_login(self):
+        return bool(self.cfg.get("server_url") and self.cfg.get("server_token"))
+
+    def server_client(self):
+        return client.Client(self.cfg["server_url"], self.cfg.get("server_token"))
+
+    def _effective_claude(self, local):
+        """Laptop tanpa Claude (atau belum login) memakai Claude di PC server bila sudah login ke server."""
+        if local != "on" and self.server_login and not self.server:
+            return "server"
+        return local
 
     @property
     def send_to_fena(self):
@@ -1596,6 +1633,7 @@ class App:
             "on": (GREEN, "claude_on"),
             "off": (AMBER, "claude_off"),
             "missing": ("#a0a4aa", "claude_missing"),
+            "server": (GREEN, "claude_server"),
         }.get(self.claude_state, ("#a0a4aa", "claude_checking"))
         self.ai_dot.delete("all")
         self.ai_dot.create_oval(1, 1, 11, 11, fill=color, outline=color)
@@ -1760,7 +1798,8 @@ class App:
                     self.status.set(self.tr("failed") + value)
                     messagebox.showerror(settings.APP_NAME, value)
                 elif kind == "claude":
-                    self.claude_state = value
+                    self.claude_local = value
+                    self.claude_state = self._effective_claude(value)
                     self._show_claude_state()
                 elif kind == "draft":
                     day, text, note = value
@@ -2267,6 +2306,31 @@ class App:
             text = build_report(*args)
             note = self.tr("claude_fallback", e=reason) if reason else self.tr("generated")
             return day, text, note
+
+        if self.claude_state == "server":
+            def with_server():
+                self._progress(15, self.tr("claude_server_writing"))
+                done = threading.Event()
+
+                def tick():
+                    pct = 25
+                    while not done.wait(2) and pct < 90:
+                        pct += 3
+                        self._progress(pct, self.tr("claude_server_writing"))
+
+                threading.Thread(target=tick, daemon=True).start()
+                try:
+                    text = self.server_client().generate(day, picked, *args[3:9])
+                    result = (day, text, self.tr("generated"))
+                except Exception as e:
+                    log.warning("Claude server gagal: %s", e)
+                    result = fallback(str(e)[:160])
+                finally:
+                    done.set()
+                self.events.put(("draft", result))
+
+            self._run(self.tr("claude_server_writing"), with_server)
+            return
 
         # Tanpa Claude: langsung susun draf tanpa AI.
         if self.claude_state == "missing" or not self.claude_cli:

@@ -64,5 +64,16 @@ class Client:
         return self._call("POST", "/api/report/submit",
                           {"date": day.isoformat(), "text": text, "source": "laptop"})
 
+    def generate(self, day, chats, start_hour, end_hour, lang, routine, notes, nicknames):
+        """Generate Report memakai Claude di PC server (untuk laptop tanpa Claude)."""
+        return self._call("POST", "/api/generate", {
+            "date": day.isoformat(), "chats": chats, "start_hour": start_hour, "end_hour": end_hour,
+            "lang": lang, "routine": list(routine), "notes": list(notes), "nicknames": nicknames,
+        }, timeout=330)["text"]
+
+    def chat(self, history, message, context=""):
+        return self._call("POST", "/api/chat", {"history": history, "message": message, "context": context},
+                          timeout=330)["text"]
+
     def team(self, day):
         return self._call("GET", f"/api/team?date={day.isoformat()}")

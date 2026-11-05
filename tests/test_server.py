@@ -99,3 +99,21 @@ def test_cookie_login(srv):
     me = urllib.request.Request(url(srv) + "/api/me", headers={"Cookie": cookie.split(";")[0]})
     with urllib.request.urlopen(me) as r:
         assert json.loads(r.read())["user"]["id"] == "sadam"
+
+
+def test_generate_and_chat_for_laptop_without_claude(srv):
+    srv.team.set_pin("winny", "333333")
+    c = Client(url(srv))
+    c.login("Winny", "333333")
+    chats = {"TCI Fara": [{"time": f"{date.today().isoformat()}T09:00", "sender": "Fara", "out": False,
+                           "text": "Win tolong terima paket vendor ATK di lobby ya"}]}
+    text = c.generate(date.today(), chats, 6, 17, "id", ["Cek buku tamu"], ["Atur ruang meeting"], {"Fara": "mba"})
+    assert "(Winny)." in text.splitlines()[0]
+    prompt = srv.calls[-1]
+    assert "paket vendor ATK" in prompt and "Cek buku tamu" in prompt and "Atur ruang meeting" in prompt
+    reply = c.chat([("user", "halo"), ("assistant", "hai")], "poin 1 dari mana?", "konteks draf")
+    assert "[REPORT]" in reply and "Penulis: halo" in srv.calls[-1] and "konteks draf" in srv.calls[-1]
+    # Tanpa login ditolak.
+    with pytest.raises(ServerError) as e:
+        Client(url(srv)).chat([], "halo")
+    assert e.value.status == 401
