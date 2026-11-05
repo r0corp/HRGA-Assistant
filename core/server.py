@@ -154,6 +154,7 @@ class _Handler(BaseHTTPRequestHandler):
         if length > limit:
             raise HttpError(413, "Data terlalu besar")
         raw = self.rfile.read(length) if length else b"{}"
+        self._body_done = True
         try:
             data = json.loads(raw.decode("utf-8"))
         except ValueError:
@@ -199,7 +200,18 @@ class _Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(data)
 
+    def _drain(self):
+        """Buang isi kiriman yang belum dibaca supaya penolakan (mis. 401) tidak memutus koneksi klien."""
+        if getattr(self, "_body_done", False):
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        if 0 < length <= MAX_BIG_BODY:
+            self.rfile.read(length)
+        elif length:
+            self.close_connection = True
+
     def handle_api(self, method):
+        self._body_done = False
         try:
             if method != "GET" and self.headers.get("X-HRGA") != "1":
                 raise HttpError(403, "Permintaan ditolak")
@@ -209,6 +221,7 @@ class _Handler(BaseHTTPRequestHandler):
                 raise HttpError(404, "Tidak ditemukan")
             route(self)
         except HttpError as e:
+            self._drain()
             self.send(e.status, {"error": str(e)})
         except Exception:
             log.exception("Error server: %s %s", method, self.path)
