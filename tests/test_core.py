@@ -273,3 +273,18 @@ def test_chat_report_without_markers_and_notes():
                                           "1. Remote Kyocera.\n2. Perbaikan laptop Ilham.\n- cache dibersihkan.")
     assert chat.extract_notes(reply) == ["Perbaikan laptop Ilham: cache dibersihkan."]
     assert "[CATATAN]" not in chat.display_text(reply)
+
+
+def test_translate_with_claude_keeps_title_and_honorifics():
+    from core import claude_ai
+    draft = "Daily Report Rabu/04 November 2026 (Rohman).\n\n1. Bantu pak Juproni setting printer.\n- mba Lusi: OTP 123456 sudah dikirim."
+    seen = {}
+
+    def fake(cli, prompt, title):
+        seen["prompt"], seen["title"] = prompt, title
+        return claude_ai.tidy("Daily Report X\n\n1. Helped Mr. Juproni set up the printer.\n- Ms. Lusi: sent.", title)
+
+    out = claude_ai.translate("cli", draft, DAY, "Rohman", generate_fn=fake)
+    assert out.splitlines()[0] == "Daily Report Rabu/04 November 2026 (Rohman)."
+    assert "pak Juproni" in out and "mba Lusi" in out and "Mr." not in out
+    assert "123456" not in seen["prompt"] and "Bantu pak Juproni" in seen["prompt"]

@@ -71,6 +71,10 @@ class Client:
             "lang": lang, "routine": list(routine), "notes": list(notes), "nicknames": nicknames,
         }, timeout=330)["text"]
 
+    def translate(self, day, text):
+        """Terjemahkan draf ke Inggris memakai Claude di PC server."""
+        return self._call("POST", "/api/translate", {"date": day.isoformat(), "text": text}, timeout=330)["text"]
+
     def chat(self, history, message, context=""):
         return self._call("POST", "/api/chat", {"history": history, "message": message, "context": context},
                           timeout=330)["text"]

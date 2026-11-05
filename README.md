@@ -12,8 +12,7 @@ flowchart TB
         WA["WhatsApp Web<br/>(Edge headless)"] -->|Tarik Chat| APP["HRGA WA Report"]
         NOTE["Catatan manual"] --> APP
         APP <-->|"Generate & Chat Claude"| CL["Claude Code<br/>(langganan di laptop)"]
-        APP -->|Terjemahkan| DL["DeepL web"]
-    end
+            end
 
     subgraph HP["HP tim Android"]
         WEB["Halaman web HRGA Report<br/>(Chrome, login nama + PIN)"]
@@ -58,7 +57,7 @@ flowchart TB
 - **Catatan manual:** tambahkan sticky note untuk pekerjaan yang tidak ada di chat; catatan ini ikut masuk report saat Generate. Catatan bisa disembunyikan, dan catatan yang terhapus bisa dikembalikan dengan Undo/Redo.
 - **Kalender dengan libur nasional:** klik tanggal report untuk membuka kalender dropdown, lengkap dengan daftar libur nasional Indonesia bulan itu.
 - **Kirim ke grup:** report dikirim hanya ke grup **GRUP TEAM HRGA**. Selain itu, draf bisa disalin atau disimpan sebagai PDF berkop logo perusahaan.
-- **Terjemahkan (DeepL):** satu klik menerjemahkan draf ke Inggris lewat DeepL web (gratis, tanpa API key). Nama hari di judul tetap Indonesia, sapaan pak/mas/mba tidak diubah jadi Mr./Ms., dan Ctrl+Z mengembalikan versi Indonesia.
+- **Terjemahkan:** satu klik menerjemahkan draf ke Inggris dengan Claude (di laptop, atau Claude server untuk laptop tanpa Claude). Susunan nomor dan sub-poin tetap, nama hari di judul tetap Indonesia, sapaan pak/mas/mba tidak diubah jadi Mr./Ms., dan Ctrl+Z mengembalikan versi Indonesia. (Sebelumnya lewat DeepL web, tapi DeepL kini meminta verifikasi CAPTCHA.)
 - **Chat Claude:** tanya jawab dengan Claude langsung di app, mis. "poin 3 dasarnya dari chat mana?" atau "poin 2 bukan kerjaan saya, hapus". Claude melihat draf, item rutin, catatan, dan chat WhatsApp tanggal yang dibuka; revisi report bisa diterapkan ke draf dengan satu klik.
 - **Server HRGA, Kirim ke Fena, dan Rekap Tim:** satu PC server menampung report seluruh tim untuk Fena. Tim Android (tanpa laptop) membuka halaman web di HP, mengetik atau mendikte cerita pekerjaan, lalu Claude merapikannya jadi daily report. Tim laptop mengirim report ke supervisor (Fena) dari app. Supervisor melihat siapa yang sudah/belum report di Rekap Tim. Akses dari luar kantor lewat Tailscale Funnel, login nama + PIN. Panduan: [docs/server.md](docs/server.md).
 - **Timeline 5 hari kerja:** menandai hari yang sudah report ke grup dan yang terlewat, dibaca langsung dari isi grup. Report yang dikirim manual juga ikut terhitung.

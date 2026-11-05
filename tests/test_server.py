@@ -137,3 +137,12 @@ def test_supervisor_recap_admin_users(srv):
     with pytest.raises(ServerError) as e:
         it._call("POST", "/api/users", {"action": "update", "id": "rohman", "role": "member"})
     assert e.value.status == 400
+
+
+def test_translate_endpoint(srv):
+    srv.team.set_pin("winny", "333333")
+    c = Client(url(srv))
+    c.login("Winny", "333333")
+    out = c.translate(date.today(), "Daily Report X (Winny).\n\n1. Menerima tamu.")
+    assert out.splitlines()[0].startswith("Daily Report") and "(Winny)." in out.splitlines()[0]
+    assert "Menerima tamu" in srv.calls[-1]

@@ -370,6 +370,19 @@ class _Handler(BaseHTTPRequestHandler):
         self.app.team.audit(f"generate {d.isoformat()}", uid, self.client_ip())
         self.send(200, {"text": text})
 
+    def api_translate(self):
+        """Terjemahkan draf ke Inggris dengan Claude server (untuk laptop tanpa Claude)."""
+        uid = self.user()
+        data = self.body(MAX_BIG_BODY)
+        d = self.day(data.get("date"), uid)
+        text = str(data.get("text", "")).strip()
+        if not text:
+            raise HttpError(400, "Draf masih kosong")
+        name = self.app.team.users[uid]["name"]
+        out = self.app.claude(lambda cli: claude_ai.translate(cli, text, d, name, generate_fn=self.app.tidy_fn))
+        self.app.team.audit(f"translate {d.isoformat()}", uid, self.client_ip())
+        self.send(200, {"text": out})
+
     def api_chat(self):
         """Chat Claude untuk laptop tanpa Claude; riwayat dan konteks dikirim oleh app laptop."""
         uid = self.user()
@@ -448,6 +461,7 @@ ROUTES = {
     ("GET", "/api/history"): _Handler.api_history,
     ("POST", "/api/generate"): _Handler.api_generate,
     ("POST", "/api/chat"): _Handler.api_chat,
+    ("POST", "/api/translate"): _Handler.api_translate,
     ("GET", "/api/team"): _Handler.api_team,
     ("GET", "/api/users"): _Handler.api_users_get,
     ("POST", "/api/users"): _Handler.api_users_post,

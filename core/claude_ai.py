@@ -204,6 +204,35 @@ def build_story_prompt(story, day, name="", lang="id", routine=()):
     return f"{rules}\n\nCerita penulis ({name or 'penulis'}):\n{' '.join(redact(story).split())}\n"
 
 
+TRANSLATE = """Terjemahkan daily report berikut dari Bahasa Indonesia ke Bahasa Inggris yang natural dan profesional.
+Aturan:
+- Baris pertama persis: {title}
+- Lalu satu baris kosong, lalu daftar dengan susunan SAMA persis: nomor "1.", "2.", dst. dan sub-poin "- " tetap
+  di tempatnya, jumlah poin dan sub-poin sama, tanpa baris kosong di antara nomor.
+- Sapaan Indonesia pak/bu/mba/mas/bapak/ibu tetap ditulis apa adanya (huruf kecil) di depan nama;
+  jangan diubah jadi Mr./Ms./Mrs.
+- Nama orang, nama tempat (mis. Cakung, Circle One SCBD), merek, dan istilah teknis tidak diterjemahkan.
+- Jangan menambah, mengurangi, atau mengubah isi. Tanpa penjelasan dan tanpa markdown.
+
+Report:
+{report}
+"""
+
+
+def build_translate_prompt(text, day, name=""):
+    from core.deepl import english_title
+    body = "\n".join(l for l in text.splitlines() if l.strip() and not l.lower().startswith("daily report"))
+    return TRANSLATE.format(title=english_title(day, name), report=redact(body)), english_title(day, name)
+
+
+def translate(cli, text, day, name="", generate_fn=None):
+    """Draf Indonesia -> Inggris dengan Claude; sapaan pak/mba/mas tetap, judul hari Indonesia + bulan Inggris."""
+    from core.deepl import fix_honorifics
+    prompt, title = build_translate_prompt(text, day, name)
+    out = (generate_fn or generate)(cli, prompt, title)
+    return fix_honorifics(text, out).strip() + "\n"
+
+
 def tidy(text, title):
     """Bersihkan jawaban Claude: buang markdown dan pastikan judulnya benar."""
     text = text.strip().replace("**", "")

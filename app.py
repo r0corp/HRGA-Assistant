@@ -2527,10 +2527,29 @@ class App:
         with open(report_path(day, "id.txt"), "w", encoding="utf-8") as f:
             f.write(text)
 
+        # Terjemahan memakai Claude (DeepL web sekarang meminta verifikasi CAPTCHA).
+        remote = self.claude_state == "server"
+        if not remote and (self.claude_state != "on" or not self.claude_cli):
+            messagebox.showinfo(settings.APP_NAME, self.tr("chat_no_claude"))
+            return
+
         def work():
-            self._progress(10, self.tr("deepl_opening"))
-            english = deepl.translate(text, day, self.cfg["name"],
-                                      progress=lambda p: self._progress(p, self.tr("deepl_working")))
+            done = threading.Event()
+
+            def tick():
+                pct = 15
+                while not done.wait(2) and pct < 90:
+                    pct += 4
+                    self._progress(pct, self.tr("deepl_working"))
+
+            threading.Thread(target=tick, daemon=True).start()
+            try:
+                if remote:
+                    english = self.server_client().translate(day, text)
+                else:
+                    english = claude_ai.translate(self.claude_cli, text, day, self.cfg["name"])
+            finally:
+                done.set()
             self.events.put(("translated", (day, english)))
 
         self._run(self.tr("deepl_working"), work)
