@@ -22,7 +22,7 @@ from core.team import AuthError, Team, parse_day, recap_text
 
 log = logging.getLogger("server")
 
-PORT = 8400
+PORT = 8500
 COOKIE = "hrga_session"
 MAX_BODY = 64 * 1024
 # Generate dan Chat dari laptop membawa isi chat WhatsApp sehari, jadi batasnya lebih besar.
@@ -436,3 +436,29 @@ ROUTES = {
     ("GET", "/api/users"): _Handler.api_users_get,
     ("POST", "/api/users"): _Handler.api_users_post,
 }
+
+
+def run_headless(argv, web_dir):
+    """Mode layanan Windows (NSSM) di PC server: server saja, tanpa jendela.
+
+    Opsi: --port 8500 (bawaan), --lang id/en. Folder data mengikuti HRGA_WA_DATA,
+    dan lokasi Claude bisa dipaksa lewat HRGA_CLAUDE_CLI (mis. claude.exe bawaan paket npm).
+    """
+    import argparse
+
+    from core import settings
+
+    ap = argparse.ArgumentParser(prog="hrga-server")
+    ap.add_argument("--server", action="store_true")
+    ap.add_argument("--port", type=int, default=PORT)
+    ap.add_argument("--lang", default="id", choices=("id", "en"))
+    args, _ = ap.parse_known_args(argv)
+    cli = os.environ.get("HRGA_CLAUDE_CLI") or claude_ai.find_cli()
+    log.info("Mode server: port %d, data %s, Claude %s", args.port, settings.SERVER_DIR, cli or "-")
+    srv = ReportServer(settings.SERVER_DIR, web_dir, cli=cli, lang=args.lang, port=args.port).start()
+    stop = threading.Event()
+    try:
+        while not stop.wait(3600):
+            pass
+    finally:
+        srv.stop()

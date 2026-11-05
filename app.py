@@ -2549,6 +2549,11 @@ def main():
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         encoding="utf-8",
     )
+    # PC server: jalan sebagai layanan Windows tanpa jendela, mis. "HRGA WA Report.exe --server --port 8500".
+    if "--server" in sys.argv:
+        from core import server
+        server.run_headless(sys.argv[1:], asset("web"))
+        return
     if already_running():
         return
     # Sisa file update (exe unduhan dan script) tidak disimpan.

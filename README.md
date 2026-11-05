@@ -20,7 +20,7 @@ flowchart TB
     end
 
     subgraph SRV["PC server (app .exe, Mode server)"]
-        API["Server HRGA<br/>127.0.0.1:8400"]
+        API["Server HRGA<br/>127.0.0.1:8500"]
         DATA[("User, sesi, report<br/>per tanggal")]
         CLS["Claude Code<br/>(akun Supervisor)"]
         API <--> DATA

@@ -48,16 +48,20 @@ def is_on(cli, port):
         data.get("Web") or {})
 
 
-def enable(cli, port):
-    """Nyalakan Funnel di latar; kembalikan (ok, pesan). Pesan berisi link admin kalau Funnel belum diizinkan."""
+def enable(cli, port, https_port=443):
+    """Nyalakan Funnel di latar untuk satu port HTTPS (443, 8443, atau 10000) tanpa mengubah Funnel lain.
+
+    Kembalikan (ok, pesan); pesan berisi link admin kalau Funnel belum diizinkan.
+    """
     try:
-        r = _run(cli, "funnel", "--bg", f"http://127.0.0.1:{port}", timeout=60)
+        r = _run(cli, "funnel", "--bg", f"--https={https_port}", f"http://127.0.0.1:{port}", timeout=60)
     except subprocess.TimeoutExpired:
         return False, "Tailscale tidak menjawab. Funnel mungkin perlu diizinkan dulu di admin console."
     out = (r.stdout + "\n" + r.stderr).strip()
     return r.returncode == 0, out
 
 
-def disable(cli):
-    r = _run(cli, "funnel", "reset")
+def disable(cli, https_port=443):
+    """Matikan Funnel hanya di port HTTPS ini; Funnel aplikasi lain tetap jalan (bukan "funnel reset")."""
+    r = _run(cli, "funnel", f"--https={https_port}", "off")
     return r.returncode == 0, (r.stdout + r.stderr).strip()

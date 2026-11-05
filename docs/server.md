@@ -16,7 +16,7 @@ Server berjalan di dalam app yang sama (exe yang sama), jadi update tetap lewat 
    - centang **Jalankan otomatis saat Windows menyala**;
    - centang **Jadikan PC ini server HRGA**;
    - klik **Simpan**.
-4. Di Pengaturan sekarang muncul tulisan **Server aktif di 127.0.0.1:8400**.
+4. Di Pengaturan sekarang muncul tulisan **Server aktif di 127.0.0.1:8500**.
 
 PC server harus tetap menyala dan user Windows-nya login (app terbuka). Atur Power Options supaya PC tidak sleep.
 
@@ -37,7 +37,7 @@ PC server harus tetap menyala dan user Windows-nya login (app terbuka). Atur Pow
    - **HP Android:** buka di Chrome → menu ⋮ → **Tambahkan ke layar utama**.
    - **Laptop:** Pengaturan → **Alamat server** → **Login** dengan nama + PIN.
 
-Funnel hanya meneruskan HTTPS ke `127.0.0.1:8400`, jadi PC server tidak membuka port lain ke internet. Untuk mematikan akses publik, jalankan `tailscale funnel reset`, atau matikan **Mode server**.
+Funnel hanya meneruskan HTTPS ke `127.0.0.1:8500`, jadi PC server tidak membuka port lain ke internet. Untuk mematikan akses publik, jalankan `tailscale funnel reset`, atau matikan **Mode server**.
 
 ## 3. Buat PIN tiap orang
 
