@@ -726,6 +726,11 @@ class SettingsDialog(tk.Toplevel):
 
         FlatButton(body, tr("srv_login"), go, "primary").pack(fill="x", pady=(6, 0))
         pin_entry.bind("<Return>", go)
+        # Dialog PIN muncul di tengah jendela Pengaturan, bukan di pojok kiri atas layar.
+        dlg.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - dlg.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - dlg.winfo_height()) // 3
+        dlg.geometry(f"+{max(x, 0)}+{max(y, 0)}")
         pin_entry.focus_set()
 
     def _server_logout(self):
