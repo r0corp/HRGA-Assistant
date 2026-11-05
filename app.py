@@ -52,6 +52,14 @@ def asset(name):
     return os.path.join(base, "assets", name)
 
 
+def default_server_url():
+    try:
+        with open(asset("server_url.txt"), encoding="utf-8") as f:
+            return client.normalize(f.read())
+    except OSError:
+        return ""
+
+
 def raw_path(day):
     return os.path.join(settings.RAW_DIR, f"{day.isoformat()}.json")
 
@@ -502,16 +510,19 @@ class SettingsDialog(tk.Toplevel):
         self._account_row(box, app.wa_state is True, tr("wa_on"), tr("wa_off"), tr("wa_login"), self._relogin)
         self._field(box, tr("phone"), ttk.Entry(box, textvariable=self.v_phone, width=40))
         self._field(box, tr("group"), label(box, settings.REPORT_GROUP, 10, TEXT, True), tr("group_hint"))
-        row = tk.Frame(box, bg=CARD)
-        ttk.Spinbox(row, from_=0, to=23, textvariable=self.v_start, width=5).pack(side="left")
-        label(row, tr("to"), 9, MUTED).pack(side="left", padx=8)
-        ttk.Spinbox(row, from_=1, to=24, textvariable=self.v_end, width=5).pack(side="left")
-        self._field(box, tr("work_hours"), row)
-        self.exclude = tk.Text(box, height=3, width=40, font=(FONT, 9), relief="flat", bd=0,
-                               highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
-                               padx=6, pady=4, wrap="word")
-        self.exclude.insert("1.0", "; ".join(cfg["exclude"]))
-        self._field(box, tr("advanced"), self.exclude)
+        # Pengaturan rumit (jam kerja, chat diabaikan, server) hanya untuk Administrator / PC server.
+        full = self.full = app.is_user_admin
+        if full:
+            row = tk.Frame(box, bg=CARD)
+            ttk.Spinbox(row, from_=0, to=23, textvariable=self.v_start, width=5).pack(side="left")
+            label(row, tr("to"), 9, MUTED).pack(side="left", padx=8)
+            ttk.Spinbox(row, from_=1, to=24, textvariable=self.v_end, width=5).pack(side="left")
+            self._field(box, tr("work_hours"), row)
+            self.exclude = tk.Text(box, height=3, width=40, font=(FONT, 9), relief="flat", bd=0,
+                                   highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
+                                   padx=6, pady=4, wrap="word")
+            self.exclude.insert("1.0", "; ".join(cfg["exclude"]))
+            self._field(box, tr("advanced"), self.exclude)
         self.routine = tk.Text(box, height=3, width=40, font=(FONT, 9), relief="flat", bd=0,
                                highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
                                padx=6, pady=4, wrap="word")
@@ -548,13 +559,16 @@ class SettingsDialog(tk.Toplevel):
         self._account_row(box, logged, tr("srv_on", u=who), tr("srv_off"),
                           tr("srv_logout") if logged else tr("srv_login"),
                           self._server_logout if logged else self._server_login)
-        self._field(box, tr("srv_url"), ttk.Entry(box, textvariable=self.v_url, width=40), tr("srv_url_hint"))
-        label(box, tr("send_to")).pack(anchor="w", pady=(6, 2))
-        for value, key in (("fena", "send_to_fena"), ("group", "send_to_group")):
-            ttk.Radiobutton(box, text=tr(key), value=value, variable=self.v_send_to,
-                            style="Card.TRadiobutton").pack(anchor="w")
-        ttk.Checkbutton(box, text=tr("server_mode"), variable=self.v_server, style="Card.TCheckbutton").pack(
-            anchor="w", pady=(8, 0))
+        # Alamat server sudah terisi dari build; anggota hanya perlu login nama + PIN.
+        if full or not cfg.get("server_url"):
+            self._field(box, tr("srv_url"), ttk.Entry(box, textvariable=self.v_url, width=40), tr("srv_url_hint"))
+        if full:
+            label(box, tr("send_to")).pack(anchor="w", pady=(6, 2))
+            for value, key in (("fena", "send_to_fena"), ("group", "send_to_group")):
+                ttk.Radiobutton(box, text=tr(key), value=value, variable=self.v_send_to,
+                                style="Card.TRadiobutton").pack(anchor="w")
+            ttk.Checkbutton(box, text=tr("server_mode"), variable=self.v_server, style="Card.TCheckbutton").pack(
+                anchor="w", pady=(8, 0))
         if logged and not app.server and app.is_user_admin:
             FlatButton(box, tr("users"), lambda: UsersWindow(app, self), small=True).pack(anchor="w", pady=(8, 0))
         if app.server:
@@ -614,7 +628,8 @@ class SettingsDialog(tk.Toplevel):
             phone=self.v_phone.get().strip(),
             start_hour=start,
             end_hour=end,
-            exclude=[s.strip() for s in self.exclude.get("1.0", "end").split(";") if s.strip()],
+            exclude=([s.strip() for s in self.exclude.get("1.0", "end").split(";") if s.strip()]
+                     if hasattr(self, "exclude") else self.app.cfg["exclude"]),
             routine=[s.strip() for s in self.routine.get("1.0", "end").splitlines() if s.strip()],
             nicknames=parse_nicknames(self.nicknames.get("1.0", "end")),
             lang=lang,
@@ -1351,6 +1366,8 @@ class App:
     def __init__(self, root):
         self.root = root
         self.cfg = settings.load()
+        if not self.cfg.get("server_url"):
+            self.cfg["server_url"] = default_server_url()
         self.chats = {}
         self.events = queue.Queue()
         self.busy = False
