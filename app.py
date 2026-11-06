@@ -581,14 +581,22 @@ class SettingsDialog(tk.Toplevel):
         # App HRGA (Internal Asset Tracker): report dikirim ke sana dengan token pribadi.
         self.v_iat_url = tk.StringVar(value=cfg.get("iat_url", ""))
         self.v_iat_token = tk.StringVar(value="")
+        self.v_iat_username = tk.StringVar(value=cfg.get("iat_username", ""))
+        self.v_iat_password = tk.StringVar(value="")
         iat_user = cfg.get("iat_user", "")
-        label(box, "App HRGA", 9, TEXT, True).pack(anchor="w", pady=(10, 0))
-        label(box, ("● Terhubung sebagai " + iat_user) if cfg.get("iat_token") else "○ Belum terhubung", 8,
+        label(box, tr("iat_title"), 9, TEXT, True).pack(anchor="w", pady=(10, 0))
+        label(box, tr("iat_connected", u=iat_user) if cfg.get("iat_token") else tr("iat_not_connected"), 8,
               GREEN if cfg.get("iat_token") else MUTED).pack(anchor="w")
         if full or not cfg.get("iat_url"):
-            self._field(box, "Alamat App HRGA", ttk.Entry(box, textvariable=self.v_iat_url, width=40))
-        self._field(box, "Token HRGA Asisten", ttk.Entry(box, textvariable=self.v_iat_token, width=40, show="•"),
-                    "Dari App HRGA → Report Harian → HRGA Asisten → Buat token")
+            self._field(box, tr("iat_url"), ttk.Entry(box, textvariable=self.v_iat_url, width=40))
+        # Cara utama: username + password App HRGA (token dibuat otomatis, password tidak disimpan).
+        self._field(box, tr("iat_username"), ttk.Entry(box, textvariable=self.v_iat_username, width=40))
+        self._field(box, tr("iat_password"), ttk.Entry(box, textvariable=self.v_iat_password, width=40, show="•"),
+                    tr("iat_login_hint"))
+        if full:
+            # Cadangan untuk Administrator: tempel token dari App HRGA → Report Harian → HRGA Asisten.
+            self._field(box, tr("iat_token"), ttk.Entry(box, textvariable=self.v_iat_token, width=40, show="•"),
+                        tr("iat_token_hint"))
         if app.server:
             row = tk.Frame(box, bg=CARD)
             row.pack(fill="x", pady=(4, 0))
@@ -641,18 +649,26 @@ class SettingsDialog(tk.Toplevel):
             messagebox.showerror(settings.DISPLAY_NAME, self.app.tr("err_hours"), parent=self)
             return False
         lang = next(k for k, v in LANGS.items() if v == self.v_lang.get())
-        # Token App HRGA baru: cek dulu ke server sebelum disimpan.
+        # App HRGA: masuk dengan username + password (atau token cadangan), cek ke server dulu.
         iat_url = client.normalize(self.v_iat_url.get()) or self.app.cfg.get("iat_url", "")
         new_token = self.v_iat_token.get().strip()
-        if new_token:
+        username, password = self.v_iat_username.get().strip(), self.v_iat_password.get()
+        me = None
+        iat = client.IatClient(iat_url, new_token, timeout=15, lan_url=self.app.cfg.get("iat_url_lan", ""))
+        if username and password:
+            label_ = "HRGA Asisten - " + (self.v_name.get().strip() or username)
             try:
-                me = client.IatClient(iat_url, new_token, timeout=15, lan_url=self.app.cfg.get("iat_url_lan", "")).me()
+                me = iat.login(username, password, label_)
             except client.ServerError as e:
-                messagebox.showerror(settings.DISPLAY_NAME, f"Token App HRGA ditolak: {e}", parent=self)
+                messagebox.showerror(settings.DISPLAY_NAME, self.app.tr("iat_login_failed", e=e), parent=self)
                 return False
-            self.app.cfg.update(iat_token=new_token, iat_user=me.get("full_name") or me.get("username", ""),
-                                send_to="fena")
-            self.app.apply_iat_profile(me)
+            new_token = me.get("token", "")
+        elif new_token:
+            try:
+                me = iat.me()
+            except client.ServerError as e:
+                messagebox.showerror(settings.DISPLAY_NAME, self.app.tr("iat_token_rejected", e=e), parent=self)
+                return False
         self.app.cfg["iat_url"] = iat_url
         self.app.cfg.update(
             name=self.v_name.get().strip(),
@@ -668,6 +684,11 @@ class SettingsDialog(tk.Toplevel):
             send_to=self.v_send_to.get(),
             server_mode=self.v_server.get(),
         )
+        if me:
+            # Setelah isian lain disimpan, supaya profil dari App HRGA (nama, bahasa, item rutin) yang dipakai.
+            self.app.cfg.update(iat_token=new_token, iat_user=me.get("full_name") or me.get("username", ""),
+                                iat_username=me.get("username", username), send_to="fena")
+            self.app.apply_iat_profile(me)
         self.app.apply_server_mode()
         settings.save(self.app.cfg)
         try:
@@ -2916,7 +2937,7 @@ class App:
                                      lan_url=self.cfg.get("iat_url_lan", "")).submit(day, text)
                 except client.ServerError as e:
                     if e.status == 401:
-                        raise RuntimeError("Token App HRGA tidak berlaku lagi. Buat token baru di App HRGA.")
+                        raise RuntimeError(self.tr("iat_expired"))
                     raise RuntimeError(str(e))
                 self.events.put(("history", history.mark_sent(settings.HISTORY_FILE, day)))
                 self.events.put(("info", self.tr("sent_fena")))

@@ -56,6 +56,13 @@ class IatClient:
     def me(self):
         return self._call("GET", "/api/agent/me")
 
+    def login(self, username, password, label=""):
+        """Masuk dengan akun App HRGA; server membuat token pribadi untuk laptop ini.
+        Password hanya dikirim sekali ini dan tidak disimpan."""
+        data = self._call("POST", "/api/agent/login", {"username": username, "password": password, "label": label})
+        self.token = data.get("token", "")
+        return data
+
     def submit(self, day, text):
         return self._call("POST", "/api/agent/report", {"date": day.isoformat(), "text": text, "submit": True})
 

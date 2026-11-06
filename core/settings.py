@@ -42,6 +42,7 @@ DEFAULTS = {
     # App HRGA (Internal Asset Tracker): alamat + token pribadi HRGA Asisten.
     "iat_url": "",
     "iat_url_lan": "",
+    "iat_username": "",
     "iat_token": "",
     "iat_user": "",
     "server_user": "",

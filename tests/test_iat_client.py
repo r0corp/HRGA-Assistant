@@ -18,6 +18,17 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        data = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        ok = self.path == "/api/agent/login" and data.get("password") == "rahasia"
+        body = json.dumps({"ok": True, "token": "tok", "username": data.get("username"), "display_name": "Fara",
+                           "language": "id", "profile": {"style": "list", "example": "", "routine": []}}
+                          if ok else {"ok": False, "error": "Username atau password salah"}).encode()
+        self.send_response(200 if ok else 401)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, *a):
         pass
 
@@ -47,5 +58,21 @@ def test_lan_used_first_and_bad_token_is_not_retried_elsewhere():
             raise AssertionError("seharusnya ditolak")
         except client.ServerError as e:
             assert e.status == 401 and c.url == url
+    finally:
+        srv.shutdown()
+
+
+def test_login_with_password_gets_token_then_me_works():
+    srv, url = _server()
+    try:
+        c = client.IatClient(url, "", timeout=5)
+        try:
+            c.login("fara", "salah")
+            raise AssertionError("password salah seharusnya ditolak")
+        except client.ServerError as e:
+            assert e.status == 401 and "salah" in str(e)
+        data = c.login("fara", "rahasia", "HRGA Asisten - Fara")
+        assert data["token"] == "tok" and c.token == "tok"
+        assert c.me()["username"] == "fara"          # token hasil login langsung dipakai
     finally:
         srv.shutdown()
