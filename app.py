@@ -1199,7 +1199,7 @@ class TeamWindow(SmallWindow):
             self.list.insert("end", ("✓  " if r["sent_at"] else "✕  ") + r["name"])
             self.list.itemconfigure(i, fg=GREEN if r["sent_at"] else RED)
         self.picked = None
-        self.view_title.configure(text=f"Semua orang · {fmt_day(self.day, self.app.lang)}")
+        self.view_title.configure(text=self.app.tr("team_everyone", d=fmt_day(self.day, self.app.lang)))
         self._render([(r["name"] + (f" · {r['title']}" if r.get("title") else ""), r) for r in self.rows],
                      tr("team_empty") if not done else None)
 
@@ -1249,7 +1249,7 @@ class TeamWindow(SmallWindow):
         r = self.rows[sel[0]]
         self.picked = r["id"]
         days = [d for d in history.workdays(self.day) if d <= date.today()][::-1]     # terbaru di atas
-        self.view_title.configure(text=f"{r['name']} · 5 hari kerja terakhir")
+        self.view_title.configure(text=self.app.tr("team_person_days", name=r["name"]))
         self.msg.configure(text="…")
 
         def target():
@@ -1761,7 +1761,7 @@ class App:
         titles = tk.Frame(top, bg=CARD)
         titles.pack(side="left")
         label(titles, "HRGA Asisten", 15, TEXT, True, bg=CARD).pack(anchor="w")
-        label(titles, "Report harian dari chat WhatsApp, dirapikan Claude, dikirim ke App HRGA", 9, MUTED,
+        label(titles, self.tr("app_subtitle"), 9, MUTED,
               bg=CARD).pack(anchor="w")
         # Banner "versi baru tersedia" mengisi sisa baris judul, dari kanan sampai dekat judul.
         self.update_slot = tk.Frame(top, bg=CARD)
