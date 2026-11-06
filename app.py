@@ -1102,11 +1102,13 @@ class TeamWindow(SmallWindow):
     """Rekap Tim untuk Fena: siapa yang sudah/belum report, isi report, salin & PDF."""
 
     def __init__(self, app):
-        super().__init__(app, app.tr("team_title"), (560, 600))
+        super().__init__(app, app.tr("team_title"), (820, 640))
         tr = app.tr
         self.day = date.today()
         self.rows = []
         self.text_all = ""
+        self.picked = None          # id user yang dipilih (None = semua orang)
+        self._cache = {}            # tanggal -> rows rekap (supaya pindah user tidak memuat ulang)
 
         nav = tk.Frame(self, bg=SIDE)
         nav.pack(fill="x", padx=14)
@@ -1131,15 +1133,27 @@ class TeamWindow(SmallWindow):
         card_.configure(bg=SIDE)
         card_.pack(side="left", fill="y")
         self.list = tk.Listbox(card_.body, width=18, font=(FONT, 9), relief="flat", bd=0, highlightthickness=0,
-                               activestyle="none", selectbackground="#fbe9ec", selectforeground=TEXT)
+                               activestyle="none", selectbackground=PRIMARY_SUBTLE, selectforeground=TEXT)
         self.list.pack(fill="both", expand=True, padx=6, pady=6)
         self.list.bind("<<ListboxSelect>>", self._pick)
-        paper = RoundCard(body, expand=True, fill=NOTE_BG, outline=NOTE_BAR)
-        paper.configure(bg=SIDE)
-        paper.pack(side="left", fill="both", expand=True, padx=(8, 0))
-        self.view = tk.Text(paper.body, wrap="word", font=(FONT, 9), relief="flat", bd=0, bg=NOTE_BG, fg=TEXT,
-                            padx=10, pady=8, highlightthickness=0)
-        self.view.pack(fill="both", expand=True)
+
+        # Area kartu yang bisa digulir.
+        right = tk.Frame(body, bg=SIDE)
+        right.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        self.view_title = label(right, "", 9, MUTED, True, bg=SIDE)
+        self.view_title.pack(anchor="w", pady=(0, 4))
+        wrap = tk.Frame(right, bg=SIDE)
+        wrap.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(wrap, bg=SIDE, highlightthickness=0, bd=0)
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.cards = tk.Frame(self.canvas, bg=SIDE)
+        self._cards_win = self.canvas.create_window(0, 0, window=self.cards, anchor="nw")
+        self.cards.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", self._fit_cards)
+        self.canvas.bind_all("<MouseWheel>", self._wheel, add="+")
         self._go(self.day)
 
     def _shift(self, n):
@@ -1153,16 +1167,23 @@ class TeamWindow(SmallWindow):
 
         def target():
             try:
-                if app.server:
-                    rows = app.server.team.recap(self.day)
-                    data = {"rows": rows, "text": team.recap_text(rows, self.day)}
-                else:
-                    data = client.Client(app.cfg["server_url"], app.cfg.get("server_token")).team(self.day)
+                data = self._fetch(self.day)
                 self.after(0, lambda: self._show(data))
             except Exception as e:
                 self.after(0, lambda: self.msg.configure(text=str(e)[:80]))
 
         threading.Thread(target=target, daemon=True).start()
+
+    def _fetch(self, day):
+        """Rekap satu tanggal dari server (dipakai juga untuk kartu per hari)."""
+        app = self.app
+        if app.server:
+            rows = app.server.team.recap(day)
+            data = {"rows": rows, "text": team.recap_text(rows, day)}
+        else:
+            data = client.Client(app.cfg["server_url"], app.cfg.get("server_token")).team(day)
+        self._cache[day] = data["rows"]
+        return data
 
     def _show(self, data):
         if not self.winfo_exists():
@@ -1176,23 +1197,79 @@ class TeamWindow(SmallWindow):
         for i, r in enumerate(self.rows):
             self.list.insert("end", ("✓  " if r["sent_at"] else "✕  ") + r["name"])
             self.list.itemconfigure(i, fg=GREEN if r["sent_at"] else RED)
-        self._set_view(self.text_all if done else tr("team_empty"))
+        self.picked = None
+        self.view_title.configure(text=f"Semua orang · {fmt_day(self.day, self.app.lang)}")
+        self._render([(r["name"] + (f" · {r['title']}" if r.get("title") else ""), r) for r in self.rows],
+                     tr("team_empty") if not done else None)
 
-    def _set_view(self, text):
-        self.view.configure(state="normal")
-        self.view.delete("1.0", "end")
-        self.view.insert("1.0", text)
-        self.view.configure(state="disabled")
+    # ---------- kartu ----------
+    def _wheel(self, e):
+        if self.winfo_exists() and str(self.focus_get() or "").startswith(str(self)):
+            self.canvas.yview_scroll(int(-e.delta / 120), "units")
+
+    def _fit_cards(self, e):
+        self.canvas.itemconfigure(self._cards_win, width=e.width)
+        for lbl in getattr(self, "_texts", []):
+            lbl.configure(wraplength=max(e.width - 40, 200))
+
+    def _render(self, items, empty_text=None):
+        """items: [(judul kartu, row rekap)]. Satu kartu per item."""
+        for w in self.cards.winfo_children():
+            w.destroy()
+        self._texts = []
+        tr = self.app.tr
+        width = max(self.canvas.winfo_width() - 40, 300)
+        if empty_text:
+            label(self.cards, empty_text, 9, MUTED, bg=SIDE).pack(anchor="w", pady=6)
+        for title, r in items:
+            card_ = tk.Frame(self.cards, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
+            card_.pack(fill="x", pady=(0, 8))
+            head = tk.Frame(card_, bg=CARD)
+            head.pack(fill="x", padx=10, pady=(8, 4))
+            label(head, title, 9, TEXT, True, bg=CARD).pack(side="left")
+            sent = r.get("sent_at")
+            status = tr("team_sent", t=sent[11:16]) if sent else tr("team_not_sent")
+            label(head, ("✓ " if sent else "✕ ") + status, 8, GREEN if sent else RED, True, bg=CARD).pack(side="right")
+            if sent and (r.get("text") or "").strip():
+                body = tk.Frame(card_, bg=NOTE_BG, highlightthickness=0)
+                body.pack(fill="x", padx=10, pady=(0, 10))
+                lbl = tk.Label(body, text=r["text"].strip(), bg=NOTE_BG, fg=TEXT, font=(FONT, 9), justify="left",
+                               anchor="w", wraplength=width)
+                lbl.pack(fill="x", padx=10, pady=8)
+                self._texts.append(lbl)
+            else:
+                tk.Frame(card_, bg=CARD, height=4).pack()
+        self.canvas.yview_moveto(0)
 
     def _pick(self, _e=None):
         sel = self.list.curselection()
         if not sel:
             return
         r = self.rows[sel[0]]
-        tr = self.app.tr
-        head = f"{r['name']} · {r['title']} · " + (
-            tr("team_sent", t=r["sent_at"][11:16]) if r["sent_at"] else tr("team_not_sent"))
-        self._set_view(head + "\n\n" + (r["text"] or ""))
+        self.picked = r["id"]
+        days = [d for d in history.workdays(self.day) if d <= date.today()][::-1]     # terbaru di atas
+        self.view_title.configure(text=f"{r['name']} · 5 hari kerja terakhir")
+        self.msg.configure(text="…")
+
+        def target():
+            out = []
+            try:
+                for d in days:
+                    rows = self._cache.get(d) or self._fetch(d)["rows"]
+                    row = next((x for x in rows if x["id"] == r["id"]), None)
+                    if row:
+                        out.append((fmt_day(d, self.app.lang), row))
+            except Exception as e:
+                self.after(0, lambda: self.msg.configure(text=str(e)[:80]))
+                return
+
+            def show():
+                if self.winfo_exists() and self.picked == r["id"]:
+                    self.msg.configure(text="")
+                    self._render(out)
+            self.after(0, show)
+
+        threading.Thread(target=target, daemon=True).start()
 
     def on_copy(self):
         if self.text_all:

@@ -9,7 +9,7 @@ import tempfile
 import urllib.request
 
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 # Rilis diambil dari repo ini; file .exe dilampirkan sebagai asset rilis.
 REPO = "r0corp/hrga-wa-report"
