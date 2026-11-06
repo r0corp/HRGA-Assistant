@@ -80,7 +80,7 @@ function setSent(sentAt) {
   const p = $("sent-pill");
   p.textContent = sentAt ? "Terkirim " + fmtTime(sentAt) : "Belum dikirim";
   p.classList.toggle("ok", !!sentAt);
-  $("send-btn").textContent = sentAt ? "Kirim ulang ke Fena" : "Kirim ke Fena";
+  $("send-btn").textContent = sentAt ? "Kirim ulang ke Spv" : "Kirim ke Spv";
 }
 
 // ---------- report ----------
@@ -114,7 +114,7 @@ async function tidy() {
     const r = await api("POST", "/api/tidy", { date: $("day").value, story });
     $("report").value = r.text;
     $("saved").textContent = "Tersimpan";
-    toast("Draf siap. Cek dulu, lalu Kirim ke Fena.");
+    toast("Draf siap. Cek dulu, lalu Kirim ke Spv.");
   });
 }
 
@@ -134,11 +134,11 @@ async function revise() {
 async function send() {
   const text = $("report").value.trim();
   if (!text) { toast("Report masih kosong"); return; }
-  if (!confirm("Kirim report tanggal " + $("day").value + " ke Fena?")) return;
+  if (!confirm("Kirim report tanggal " + $("day").value + " ke Supervisor?")) return;
   await busy("Mengirim...", async () => {
     const r = await api("POST", "/api/report/submit", { date: $("day").value, text, story: $("story").value });
     setSent(r.sent_at);
-    toast("Report terkirim ke Fena ✓");
+    toast("Report terkirim ke Supervisor ✓");
   });
 }
 
