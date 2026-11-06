@@ -1860,8 +1860,21 @@ class App:
         self.note_redo_btn = FlatButton(strip, "↻  " + self.tr("redo"), self.on_note_redo, "ghost", small=True)
         self.note_undo_btn = FlatButton(strip, "↺  " + self.tr("undo"), self.on_note_undo, "ghost", small=True)
         self.note_undo, self.note_redo = [], []
-        self.day_strip = tk.Frame(strip, bg=CARD)
-        self.day_strip.pack(side="left", fill="x", expand=True)
+        # Tab tanggal bisa digeser kiri/kanan (tombol ‹ ›, atau scroll mouse di atasnya).
+        days_nav = tk.Frame(strip, bg=CARD)
+        days_nav.pack(side="left", fill="x", expand=True)
+        self.day_prev = FlatButton(days_nav, "‹", lambda: self._scroll_days(-4), small=True)
+        self.day_prev.pack(side="left", padx=(0, 4))
+        self.day_canvas = tk.Canvas(days_nav, bg=CARD, highlightthickness=0, bd=0, height=28, xscrollincrement=30)
+        self.day_canvas.pack(side="left", fill="x", expand=True)
+        self.day_next = FlatButton(days_nav, "›", lambda: self._scroll_days(4), small=True)
+        self.day_next.pack(side="left", padx=(4, 6))
+        self.day_strip = tk.Frame(self.day_canvas, bg=CARD)
+        self.day_canvas.create_window(0, 0, window=self.day_strip, anchor="nw")
+        self.day_strip.bind("<Configure>", self._fit_days)
+        self.day_canvas.bind("<Configure>", self._fit_days)
+        days_nav.bind("<Enter>", lambda e: self.root.bind_all("<MouseWheel>", self._wheel_days))
+        days_nav.bind("<Leave>", lambda e: self.root.unbind_all("<MouseWheel>"))
 
         # Catatan manual (sticky note kecil) untuk tanggal ini.
         self.notes_strip = tk.Frame(box, bg=CARD)
@@ -2200,14 +2213,48 @@ class App:
     def _show_day_strip(self):
         for w in self.day_strip.winfo_children():
             w.destroy()
-        days = note_days()
+        days = note_days(limit=30)
         if self.note_day and self.note_day not in days:
-            days = sorted(days + [self.note_day], reverse=True)[:7]
+            days = sorted(days + [self.note_day], reverse=True)
+        active = None
         for d in days:
             kind = "note_active" if d == self.note_day else "note"
-            FlatButton(self.day_strip, f"{DAYS_SHORT[self.lang][d.weekday()]} {d:%d/%m}",
-                       lambda d=d: self.v_date.set(fmt_day(d, self.lang)), kind, small=True).pack(
-                side="left", padx=(0, 6))
+            b = FlatButton(self.day_strip, f"{DAYS_SHORT[self.lang][d.weekday()]} {d:%d/%m}",
+                           lambda d=d: self.v_date.set(fmt_day(d, self.lang)), kind, small=True)
+            b.pack(side="left", padx=(0, 6))
+            if d == self.note_day:
+                active = b
+        self.root.after(50, lambda: self._reveal_day(active))
+
+    def _fit_days(self, _e=None):
+        c = self.day_canvas
+        c.configure(scrollregion=(0, 0, self.day_strip.winfo_reqwidth(), self.day_strip.winfo_reqheight()),
+                    height=self.day_strip.winfo_reqheight())
+        self._day_arrows()
+
+    def _day_arrows(self):
+        """Tombol ‹ › hanya aktif kalau masih ada tab tanggal di sisi itu."""
+        first, last = self.day_canvas.xview()
+        self.day_prev.configure(state="normal" if first > 0.001 else "disabled")
+        self.day_next.configure(state="normal" if last < 0.999 else "disabled")
+
+    def _scroll_days(self, units):
+        self.day_canvas.xview_scroll(units, "units")
+        self._day_arrows()
+
+    def _wheel_days(self, e):
+        self._scroll_days(-2 if e.delta > 0 else 2)
+
+    def _reveal_day(self, button):
+        """Geser supaya tab tanggal yang aktif terlihat."""
+        if not button or not button.winfo_exists():
+            return
+        total = max(self.day_strip.winfo_reqwidth(), 1)
+        x, w = button.winfo_x(), button.winfo_width()
+        first, last = self.day_canvas.xview()
+        if x / total < first or (x + w) / total > last:
+            self.day_canvas.xview_moveto(max(x - 20, 0) / total)
+        self._day_arrows()
 
     def _show_notes(self):
         """Sticky note kecil untuk tiap catatan manual tanggal ini."""
