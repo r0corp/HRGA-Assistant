@@ -1,8 +1,12 @@
-# HRGA WA Report
+# HRGA Assistant
 
-App Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report dengan Claude, lalu kirim ke supervisor HRGA lewat server HRGA (atau ke grup tim, sementara).
+**HRGA Asisten** (dulu *HRGA WA Report*) adalah app Windows untuk tim HRGA: tarik chat WhatsApp hari ini, susun daily report dengan Claude, lalu kirim ke supervisor HRGA lewat server HRGA (atau ke grup tim, sementara).
 
-![Tampilan utama](docs/main-1.1.1.png)
+> **Status:** project selesai. Untuk tim HRGA, report harian sekarang lewat aplikasi HRGA Hub. HRGA Asisten tetap bisa dipakai penuh (versi terakhir 1.5.1) dan tetap menerima update lewat tombol **Cek update**.
+
+![Tampilan utama](docs/main-1.5.png)
+
+*Semua nama, chat, dan alamat di screenshot adalah data contoh.*
 
 ## Alur & relasi aplikasi
 
@@ -39,8 +43,8 @@ flowchart TB
 
 **Alur harian:**
 
-1. **Tim laptop:** Tarik Chat WhatsApp, lalu Generate Report dengan Claude. Tambahkan catatan untuk pekerjaan di luar chat, rapikan lewat Chat Claude, lalu klik **Kirim ke Fena**. Kalau laptop tidak punya Claude, Generate dan Chat memakai Claude di PC server.
-2. **Tim Android:** buka halaman web di HP, ketik atau dikte cerita pekerjaan, lalu **Rapikan dengan Claude**, **Minta ubah** bila perlu, dan **Kirim ke Fena**.
+1. **Tim laptop:** Tarik Chat WhatsApp, lalu Generate Report dengan Claude. Tambahkan catatan untuk pekerjaan di luar chat, rapikan lewat Chat Claude, lalu klik **Kirim ke Spv**. Kalau laptop tidak punya Claude, Generate dan Chat memakai Claude di PC server.
+2. **Tim Android:** buka halaman web di HP, ketik atau dikte cerita pekerjaan, lalu **Rapikan dengan Claude**, **Minta ubah** bila perlu, dan **Kirim ke Spv**.
 3. **Supervisor:** buka **Rekap Tim** untuk melihat siapa yang sudah dan belum report, membaca isi report, lalu **Salin semua** atau **Simpan PDF**.
 4. **PC server:** menyimpan semua report dan menjalankan Claude bersama. Server hanya bisa diakses lewat Tailscale Funnel (HTTPS), dengan login nama + PIN. Panduan setup: [docs/server.md](docs/server.md).
 
@@ -51,7 +55,7 @@ flowchart TB
 - **Report disusun Claude:** tombol Generate Report mengirim chat kerja yang sudah disaring ke Claude Code di laptop itu. Claude menulis report dengan format daily report: satu poin per pekerjaan, sub-poin per orang, lengkap dengan status, dan item rutin harian di nomor acak.
   - Memakai akun langganan Claude yang login di laptop (Pro/Team), bukan API key, jadi tidak ada biaya tambahan.
   - Semua tool Claude dimatikan; Claude hanya menerima teks chat dan mengembalikan teks report.
-  - Hanya chat dari jam kerja (bawaannya 06:00–17:00). Foto, stiker, dan ucapan duka dibuang, dan password, OTP, serta nomor rekening disamarkan sebelum dikirim.
+  - Hanya chat dari jam yang diatur di Pengaturan (bawaannya sepanjang hari, 00–24). Foto, stiker, dan ucapan duka dibuang, dan password, OTP, serta nomor rekening disamarkan sebelum dikirim.
   - Kalau Claude tidak terpasang atau belum login, app menyusun draf tanpa AI: dikelompokkan per jenis pekerjaan dengan status selesai/dalam proses.
 - **Draf ala Sticky Notes per tanggal:** draf report tampil di kertas kuning per tanggal yang tersimpan otomatis. Pindah tanggal lewat deretan chip tanggal atau kalender.
 - **Catatan manual:** tambahkan sticky note untuk pekerjaan yang tidak ada di chat; catatan ini ikut masuk report saat Generate. Catatan bisa disembunyikan, dan catatan yang terhapus bisa dikembalikan dengan Undo/Redo.
@@ -65,13 +69,15 @@ flowchart TB
 - **Panel progres:** persentase 0–100% untuk setiap proses, lalu "Complete" saat selesai.
 - **Bahasa Indonesia / English:** untuk tampilan app dan judul report.
 - **Jalan otomatis:** app bisa dibuka otomatis setiap Windows menyala.
-- **Update otomatis:** app mengecek rilis baru di GitHub saat dibuka. Bisa juga dicek manual di Pengaturan > Cek update.
+- **Update otomatis:** app mengecek rilis baru di GitHub saat dibuka. Bisa juga dicek manual lewat tombol **Cek update** di sidebar.
 
-![Pengaturan](docs/settings-1.1.1.png)
+![Pengaturan](docs/settings-1.5.png)
+
+![Rekap Tim](docs/team-1.5.png)
 
 ## Instalasi
 
-1. Unduh `HRGA-WA-Report-Setup-<versi>.exe` dari halaman [Releases](https://github.com/r0corp/hrga-wa-report/releases/latest), lalu jalankan.
+1. Unduh `HRGA-WA-Report-Setup-<versi>.exe` dari halaman [Releases](https://github.com/r0corp/HRGA-Assistant/releases/latest), lalu jalankan.
    - Tidak perlu hak admin; app dipasang per user.
    - App memakai Microsoft Edge bawaan Windows, jadi tidak ada browser tambahan yang dipasang.
 2. Buka app, klik **Pengaturan**, lalu isi nama.

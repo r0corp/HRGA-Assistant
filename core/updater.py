@@ -9,10 +9,10 @@ import tempfile
 import urllib.request
 
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 # Rilis diambil dari repo ini; file .exe dilampirkan sebagai asset rilis.
-REPO = "r0corp/hrga-wa-report"
+REPO = "r0corp/HRGA-Assistant"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 
 NEW_EXE = os.path.join(tempfile.gettempdir(), "HRGA WA Report.new.exe")

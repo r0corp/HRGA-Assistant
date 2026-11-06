@@ -1,12 +1,12 @@
-"""Simpan report ke PDF dengan kop logo Tradecorp."""
+"""Simpan report ke PDF dengan kop logo OruLabs."""
 
 import os
 
 from fpdf import FPDF
 
 
-# Merah Tradecorp dari logo, untuk garis kop.
-RED = (200, 16, 46)
+# Oranye OruLabs dari logo, untuk garis kop.
+ORANGE = (240, 120, 40)
 
 FONT_DIR = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
 
@@ -31,17 +31,17 @@ class ReportPDF(FPDF):
     def header(self):
         # Kop: logo di kiri, keterangan dokumen di kanan, garis merah di bawah.
         if self.logo and os.path.exists(self.logo):
-            self.image(self.logo, x=20, y=10, h=17)
+            self.image(self.logo, x=20, y=14, w=60)
         self.set_font(self.font_name, "B", 13)
         self.set_xy(100, 12)
         self.cell(90, 7, "HRGA Daily Report", align="R")
         self.set_font(self.font_name, "", 9)
         self.set_text_color(90, 90, 90)
         self.set_xy(100, 19)
-        self.cell(90, 5, "PT Tradecorp Indonesia", align="R")
+        self.cell(90, 5, "OruLabs", align="R")
         self.set_text_color(0, 0, 0)
 
-        self.set_draw_color(*RED)
+        self.set_draw_color(*ORANGE)
         self.set_line_width(0.8)
         self.line(20, 30, 190, 30)
         self.set_line_width(0.2)

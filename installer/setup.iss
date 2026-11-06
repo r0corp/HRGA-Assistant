@@ -12,16 +12,16 @@ AppId={{6C2F4B1E-8E0D-4C55-9A57-2B7F0C3E9A11}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
-AppPublisher=IT Support PT Tradecorp Indonesia
-AppCopyright=IT Support PT Tradecorp Indonesia
-VersionInfoCompany=IT Support PT Tradecorp Indonesia
+AppPublisher=OruLabs
+AppCopyright=OruLabs
+VersionInfoCompany=OruLabs
 VersionInfoDescription={#AppName} Setup
 VersionInfoVersion={#AppVersion}
 ; Dipasang per user tanpa hak admin, supaya update otomatis bisa menimpa .exe.
 PrivilegesRequired=lowest
 DefaultDirName={localappdata}\Programs\{#AppName}
 DisableProgramGroupPage=yes
-; Halaman Selamat Datang menampilkan gambar wizard bertema Tradecorp.
+; Halaman Selamat Datang menampilkan gambar wizard bertema OruLabs.
 DisableWelcomePage=no
 DisableDirPage=yes
 OutputDir=..\dist
@@ -60,7 +60,7 @@ ClickNext=Klik Lanjut untuk melanjutkan, atau Batal untuk keluar.
 ExitSetupTitle=Batalkan Instalasi
 ExitSetupMessage=Instalasi belum selesai. Yakin ingin keluar?
 WelcomeLabel1=Selamat datang di {#AppName}
-WelcomeLabel2=Aplikasi ini menarik chat WhatsApp hari ini dan menyusun draf daily report untuk tim HRGA PT Tradecorp Indonesia.%n%nDibuat oleh IT Support.
+WelcomeLabel2=Aplikasi ini menarik chat WhatsApp hari ini dan menyusun draf daily report untuk tim HRGA PT Tradecorp Indonesia.%n%nDibuat oleh OruLabs.
 FinishedHeadingLabel=Instalasi {#AppName} selesai
 FinishedLabel={#AppName} sudah terpasang. Buka aplikasinya, isi nama di Pengaturan, lalu hubungkan WhatsApp.
 

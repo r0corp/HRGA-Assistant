@@ -9,7 +9,7 @@ html, body { margin: 0; background: var(--bg); color: var(--text); }
 body { font: 15px/1.45 "Segoe UI", Roboto, system-ui, sans-serif; padding-bottom: env(safe-area-inset-bottom); }
 .hidden { display: none !important; }
 .top { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 8px; background: var(--side); }
-.logo { height: 34px; }
+.logo { height: 24px; max-width: 70vw; }
 .who { display: flex; gap: 10px; align-items: center; font-weight: 600; font-size: 14px; }
 .redline { height: 3px; background: var(--primary); }
 .view { max-width: 640px; margin: 0 auto; padding: 14px 16px 24px; }

@@ -1,4 +1,4 @@
-"""Buat gambar wizard installer (BMP) dari logo Tradecorp."""
+"""Buat gambar wizard installer (BMP) dari logo OruLabs."""
 
 import os
 
@@ -6,10 +6,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(HERE, "..", "assets")
-RED = (200, 16, 46)
+ORANGE = (240, 120, 40)
 TEXT = (31, 35, 40)
 MUTED = (107, 114, 128)
-# Latar putih supaya menyatu dengan latar putih ikon dan logo Tradecorp.
+# Latar putih supaya logo OruLabs (latar transparan) tetap jelas.
 PANEL = (255, 255, 255)
 
 
@@ -32,9 +32,11 @@ def wizard_image(scale):
     d = ImageDraw.Draw(img)
 
     logo = Image.open(os.path.join(ASSETS, "logo-wide.png")).convert("RGBA")
-    logo = logo.resize((150 * scale, 50 * scale), Image.LANCZOS)
-    paste_center(img, logo, 40 * scale)
-    d.rectangle(((w - 40 * scale) // 2, 106 * scale, (w + 40 * scale) // 2, 108 * scale), fill=RED)
+    # Lebar 140, tinggi mengikuti rasio logo supaya tidak gepeng.
+    lw = 140 * scale
+    logo = logo.resize((lw, round(logo.height * lw / logo.width)), Image.LANCZOS)
+    paste_center(img, logo, 80 * scale)
+    d.rectangle(((w - 40 * scale) // 2, 106 * scale, (w + 40 * scale) // 2, 108 * scale), fill=ORANGE)
 
     for text, size, bold, color, y in (
         ("HRGA", 24, True, TEXT, 140),
@@ -47,7 +49,7 @@ def wizard_image(scale):
         d.text(((w - tw) / 2, y * scale), text, font=f, fill=color)
 
     f = font(8 * scale)
-    for text, y in (("Dibuat oleh", 278), ("IT Support", 291)):
+    for text, y in (("Dibuat oleh", 278), ("OruLabs", 291)):
         d.text(((w - d.textlength(text, font=f)) / 2, y * scale), text, font=f, fill=MUTED)
     return img
 
