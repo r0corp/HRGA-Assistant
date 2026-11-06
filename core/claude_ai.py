@@ -245,20 +245,37 @@ def tidy(text, title):
     return "\n".join([title, ""] + body).strip()
 
 
-def generate(cli, prompt, title, timeout=300):
-    """Jalankan Claude tanpa tool dan tanpa jendela; kembalikan teks report."""
+def generate(cli, prompt, title, timeout=300, should_stop=None):
+    """Jalankan Claude tanpa tool dan tanpa jendela; kembalikan teks report.
+    should_stop: fungsi tombol Stop; kalau True, proses Claude dihentikan (Cancelled)."""
+    from core.cancel import Cancelled
+
     # Folder kosong sebagai working directory supaya tidak ada file proyek yang ikut terbaca.
     with tempfile.TemporaryDirectory(prefix="hrga-claude-") as cwd:
-        r = subprocess.run(
+        proc = subprocess.Popen(
             [cli, "-p", "--output-format", "text", "--model", "sonnet",
              "--tools", "", "--strict-mcp-config", "--no-session-persistence",
              "--system-prompt", SYSTEM_PROMPT],
-            input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=cwd, timeout=timeout, creationflags=NO_WINDOW,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", cwd=cwd, creationflags=NO_WINDOW,
         )
-    out = (r.stdout or "").strip()
-    if r.returncode != 0 or not out:
-        raise RuntimeError((r.stderr or out or f"exit {r.returncode}").strip()[:300])
+        waited, first = 0, True
+        while True:
+            try:
+                stdout, stderr = proc.communicate(input=prompt if first else None, timeout=1)
+                break
+            except subprocess.TimeoutExpired:
+                first = False
+                waited += 1
+                if (should_stop and should_stop()) or waited >= timeout:
+                    proc.kill()
+                    proc.communicate()
+                    if waited >= timeout:
+                        raise RuntimeError("Claude tidak menjawab dalam batas waktu.")
+                    raise Cancelled()
+    out = (stdout or "").strip()
+    if proc.returncode != 0 or not out:
+        raise RuntimeError((stderr or out or f"exit {proc.returncode}").strip()[:300])
     if "not logged in" in out.lower() or "/login" in out.lower():
         raise RuntimeError(out[:300])
     return tidy(out, title)

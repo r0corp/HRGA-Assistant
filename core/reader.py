@@ -9,6 +9,7 @@ from datetime import date, datetime
 
 from playwright.sync_api import sync_playwright
 
+from core.cancel import check as check_cancel
 from core.parse import detect_order, label_to_date, parse_pre, pre_date_text
 
 
@@ -260,8 +261,12 @@ def launch(pw, profile_dir, headless):
 
 
 class WhatsApp:
-    def __init__(self, profile_dir, headless=True, date_order="DMY", pre_date_order="DMY"):
+    def __init__(self, profile_dir, headless=True, date_order="DMY", pre_date_order="DMY", should_stop=None):
         self.profile_dir = profile_dir
+        # Tombol Stop: dicek di setiap putaran; Tarik Chat yang dihentikan tetap mengembalikan
+        # chat yang sudah terbaca (self.stopped = True).
+        self.should_stop = should_stop
+        self.stopped = False
         self.headless = headless
         # Urutan tanggal hanya dipakai kalau ambigu (hari <= 12); selebihnya
         # dideteksi otomatis dari contoh tanggal.
@@ -290,15 +295,21 @@ class WhatsApp:
 
     def wait_ready(self, timeout_s=60, sync_wait_s=180):
         """Tunggu daftar chat muncul. False kalau masih di halaman QR."""
-        try:
-            self.page.wait_for_selector("#pane-side", timeout=timeout_s * 1000)
-        except Exception:
+        for _ in range(timeout_s):
+            check_cancel(self.should_stop)
+            try:
+                self.page.wait_for_selector("#pane-side", timeout=1000)
+                break
+            except Exception:
+                continue
+        else:
             return False
 
         # Setelah login baru, WhatsApp Web masih menyinkronkan chat.
         deadline = time.time() + sync_wait_s
         time.sleep(3)
         while time.time() < deadline:
+            check_cancel(self.should_stop)
             if not self.page.evaluate(JS_SYNCING):
                 break
             time.sleep(5)
@@ -314,6 +325,7 @@ class WhatsApp:
         stale = 0
 
         while True:
+            check_cancel(self.should_stop)
             time.sleep(0.5)
             for row in self.page.evaluate(JS_VISIBLE_ROWS):
                 if row["name"] and row["name"] not in seen:
@@ -360,6 +372,8 @@ class WhatsApp:
         order = self.pre_date_order
 
         for _ in range(30):
+            if self.should_stop and self.should_stop():
+                break                       # pakai pesan yang sudah termuat
             data = self.page.evaluate(JS_MESSAGES)
             texts = [t for t in (pre_date_text(m["pre"]) for m in data["messages"]) if t]
             order = detect_order(texts, self.pre_date_order)
@@ -385,6 +399,9 @@ class WhatsApp:
         result = {}
 
         for i, name in enumerate(names, 1):
+            if self.should_stop and self.should_stop():
+                self.stopped = True
+                break
             if progress:
                 progress(i, len(names), name)
             if not self.open_chat(name):

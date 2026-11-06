@@ -19,6 +19,7 @@ import sv_ttk
 import time
 
 from core import autostart, chat, claude_ai, client, deepl, funnel, history, settings, team, updater
+from core.cancel import Cancelled
 from core.server import ReportServer
 from core.i18n import DAYS, DAYS_SHORT, LANGS, MONTHS, t
 from core.pdf import save_pdf
@@ -1487,6 +1488,7 @@ class App:
         self.chats = {}
         self.events = queue.Queue()
         self.busy = False
+        self.cancel_ev = threading.Event()      # tombol Stop
         self.update_info = None
         self.update_dismissed = None
         # Status koneksi WhatsApp: None belum dicek, "checking", True, atau False.
@@ -1732,7 +1734,10 @@ class App:
         self.prog_bar.pack(fill="x", padx=12, pady=(6, 0))
         self.prog_note = label(body, "", 8, MUTED, anchor="w", wraplength=200, justify="left")
         self.prog_note.pack(fill="x", padx=12, pady=(4, 10))
+        # Tombol Stop: hanya tampil selama ada proses (Tarik Chat, cek WhatsApp, Generate).
+        self.stop_btn = FlatButton(body, "\u25a0  " + self.tr("stop"), self.on_stop, small=True)
         self._show_progress(self.prog_state)
+        self._show_stop(self.busy)
 
         # Bagian bawah sidebar: pengaturan, versi, banner update.
         foot = tk.Frame(inner, bg=SIDE)
@@ -1957,8 +1962,9 @@ class App:
             self.prog_bar.set(0)
             return
         pct, title, note, kind = state
-        color = {"done": GREEN, "error": RED}.get(kind, TEXT)
-        text = {"done": "Complete \u2713", "error": self.tr("failed").rstrip(": ")}.get(kind, f"{pct}%")
+        color = {"done": GREEN, "error": RED, "stopped": AMBER}.get(kind, TEXT)
+        text = {"done": "Complete \u2713", "error": self.tr("failed").rstrip(": "),
+                "stopped": self.tr("stopped")}.get(kind, f"{pct}%")
         self.prog_text.configure(text=title)
         self.prog_pct.configure(text=text, fg=color)
         self.prog_note.configure(text=note)
@@ -2009,6 +2015,26 @@ class App:
         for b in self.buttons:
             if b.winfo_exists():
                 b.configure(state="disabled" if on else "normal")
+        self._show_stop(on and getattr(self, "stoppable", False))
+
+    def _show_stop(self, on):
+        btn = getattr(self, "stop_btn", None)
+        if not btn or not btn.winfo_exists():
+            return
+        if on:
+            btn.configure(state="normal")
+            btn.pack(anchor="e", padx=12, pady=(0, 10))
+        else:
+            btn.pack_forget()
+
+    def on_stop(self):
+        """Hentikan proses yang sedang berjalan secepatnya (chat yang sudah terbaca tetap disimpan)."""
+        if not self.busy:
+            return
+        self.cancel_ev.set()
+        self.status.set(self.tr("stopping"))
+        self.stop_btn.configure(state="disabled")
+        self._progress(self.prog_state[0] if self.prog_state else 0, self.tr("stopping"))
 
 
     def _read_day(self):
@@ -2020,10 +2046,13 @@ class App:
         self.v_date.set(fmt_day(day, self.lang))
         return day
 
-    def _run(self, label_text, work):
-        """Jalankan pekerjaan browser di thread lain supaya jendela tidak macet."""
+    def _run(self, label_text, work, stoppable=False):
+        """Jalankan pekerjaan browser di thread lain supaya jendela tidak macet.
+        stoppable: tampilkan tombol Stop (tidak untuk kirim report, supaya tidak terkirim setengah)."""
         if self.busy:
             return
+        self.cancel_ev.clear()
+        self.stoppable = stoppable
         self._set_busy(True)
         self.status.set(label_text)
         self._show_progress((0, label_text, "", "run"))
@@ -2033,6 +2062,8 @@ class App:
             try:
                 work()
                 ok = True
+            except Cancelled:
+                self.events.put(("stopped", self.tr("stopped")))
             except Exception as e:
                 log.exception("Gagal: %s", label_text)
                 self.events.put(("error", str(e)))
@@ -2092,8 +2123,15 @@ class App:
                     pct, note = value
                     if self.prog_state:
                         self._show_progress((pct, self.prog_state[1], note or self.prog_state[2], "run"))
+                elif kind == "stopped":
+                    # Pesan khusus (mis. "N chat tetap disimpan") jangan ditimpa pesan umum "Dihentikan".
+                    already = self.prog_state and self.prog_state[3] == "stopped"
+                    if not (already and value == self.tr("stopped")):
+                        self.status.set(value)
+                        if self.prog_state:
+                            self._show_progress((self.prog_state[0], self.prog_state[1], value, "stopped"))
                 elif kind == "finish":
-                    if self.prog_state:
+                    if self.prog_state and self.prog_state[3] != "stopped":
                         pct, title, note, _ = self.prog_state
                         self._show_progress((100, title, self.status.get(), "done") if value
                                             else (pct, title, note, "error"))
@@ -2356,7 +2394,7 @@ class App:
 
         def work():
             self._progress(10)
-            with WhatsApp(settings.PROFILE_DIR, headless=True) as wa:
+            with WhatsApp(settings.PROFILE_DIR, headless=True, should_stop=self.cancel_ev.is_set) as wa:
                 self._progress(30)
                 ok = wa.wait_ready(timeout_s=40, sync_wait_s=20)
                 self.events.put(("wa", ok))
@@ -2367,7 +2405,7 @@ class App:
 
         self.wa_state = "checking"
         self._show_wa_state()
-        self._run(self.tr("wa_checking"), work)
+        self._run(self.tr("wa_checking"), work, stoppable=True)
 
     def on_check_update(self, silent=False):
         """Cek rilis terbaru di GitHub; tidak memakai browser, jadi jalan terpisah."""
@@ -2452,7 +2490,7 @@ class App:
                 self._progress(20 + 70 * (i - 1) / max(n, 1), text)
 
             self._progress(5)
-            with WhatsApp(settings.PROFILE_DIR, headless=True) as wa:
+            with WhatsApp(settings.PROFILE_DIR, headless=True, should_stop=self.cancel_ev.is_set) as wa:
                 self._progress(10)
                 ok = wa.wait_ready()
                 self.events.put(("wa", ok))
@@ -2464,17 +2502,22 @@ class App:
                 names = [n for n in wa.list_chats(day, date.today())
                          if n not in exclude and n != group and not is_self_chat(n, phone)]
                 chats = wa.read_chats(names, day, progress)
-                self._progress(92, self.tr("history_checking"))
-                self._scan_history(wa)
+                stopped = wa.stopped
+                if not stopped:
+                    self._progress(92, self.tr("history_checking"))
+                    self._scan_history(wa)
 
             chats = {n: m for n, m in chats.items() if m}
             settings.ensure_dirs()
             with open(raw_path(day), "w", encoding="utf-8") as f:
                 json.dump(chats, f, ensure_ascii=False, indent=1)
             self.events.put(("chats", chats))
+            if stopped:
+                self.events.put(("stopped", self.tr("stopped_partial", n=len(chats))))
+                raise Cancelled()
             self.events.put(("status", self.tr("pulled", n=len(chats))))
 
-        self._run(self.tr("opening"), work)
+        self._run(self.tr("opening"), work, stoppable=True)
 
     def check_claude(self):
         """Cek Claude Code di laptop ini dan status loginnya (tanpa membuka jendela)."""
@@ -2578,8 +2621,26 @@ class App:
                         self._progress(pct, self.tr("claude_server_writing"))
 
                 threading.Thread(target=tick, daemon=True).start()
+                box = {}
+
+                def call():
+                    try:
+                        box["text"] = self.server_client().generate(day, picked, *args[3:9])
+                    except Exception as e:      # diteruskan ke thread utama di bawah
+                        box["error"] = e
+
+                worker = threading.Thread(target=call, daemon=True)
+                worker.start()
+                while worker.is_alive():
+                    worker.join(0.5)
+                    if self.cancel_ev.is_set():
+                        done.set()
+                        self.events.put(("stopped", self.tr("stopped_generate")))
+                        raise Cancelled()
                 try:
-                    text = self.server_client().generate(day, picked, *args[3:9])
+                    if "error" in box:
+                        raise box["error"]
+                    text = box["text"]
                     result = (day, text, self.tr("generated"))
                 except Exception as e:
                     log.warning("Claude server gagal: %s", e)
@@ -2588,7 +2649,7 @@ class App:
                     done.set()
                 self.events.put(("draft", result))
 
-            self._run(self.tr("claude_server_writing"), with_server)
+            self._run(self.tr("claude_server_writing"), with_server, stoppable=True)
             return
 
         # Tanpa Claude: langsung susun draf tanpa AI.
@@ -2614,8 +2675,11 @@ class App:
 
             threading.Thread(target=tick, daemon=True).start()
             try:
-                text = claude_ai.generate(self.claude_cli, prompt, title)
+                text = claude_ai.generate(self.claude_cli, prompt, title, should_stop=self.cancel_ev.is_set)
                 result = (day, text, self.tr("generated"))
+            except Cancelled:
+                self.events.put(("stopped", self.tr("stopped_generate")))
+                raise
             except Exception as e:
                 log.warning("Claude gagal: %s", e)
                 result = fallback(str(e)[:160])
@@ -2633,7 +2697,7 @@ class App:
                 self.status.set(self.tr("generated"))
             return
 
-        self._run(self.tr("claude_writing"), with_claude)
+        self._run(self.tr("claude_writing"), with_claude, stoppable=True)
 
     def on_chat(self):
         if self.chat_win and self.chat_win.winfo_exists():
