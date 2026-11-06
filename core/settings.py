@@ -4,7 +4,8 @@ import json
 import os
 
 
-APP_NAME = "HRGA WA Report"
+APP_NAME = "HRGA WA Report"          # nama folder data & exe: jangan diganti (update otomatis)
+DISPLAY_NAME = "HRGA Asisten"        # nama yang tampil ke user
 
 # Data tiap laptop disimpan di %LOCALAPPDATA%, bukan di folder .exe.
 # HRGA_WA_DATA bisa dipakai untuk menunjuk folder lain (mis. saat uji coba).
@@ -40,6 +41,7 @@ DEFAULTS = {
     "server_url": "",
     # App HRGA (Internal Asset Tracker): alamat + token pribadi HRGA Asisten.
     "iat_url": "",
+    "iat_url_lan": "",
     "iat_token": "",
     "iat_user": "",
     "server_user": "",

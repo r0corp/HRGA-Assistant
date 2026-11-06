@@ -21,30 +21,37 @@ def normalize(url):
 class IatClient:
     """Klien App HRGA (Internal Asset Tracker): kirim report dengan token pribadi dari halaman HRGA Asisten."""
 
-    def __init__(self, url, token, timeout=30):
-        self.url = normalize(url)
+    def __init__(self, url, token, timeout=30, lan_url=""):
+        # Alamat kantor (LAN) dicoba dulu dengan batas waktu singkat, lalu alamat internet.
+        self.urls = [u for u in dict.fromkeys((normalize(lan_url), normalize(url))) if u]
+        self.url = self.urls[0] if self.urls else ""
         self.token = (token or "").strip()
         self.timeout = timeout
 
     def _call(self, method, path, data=None):
-        if not self.url:
+        if not self.urls:
             raise ServerError("Alamat App HRGA belum diisi di Pengaturan")
         body = json.dumps(data).encode("utf-8") if data is not None else None
-        req = urllib.request.Request(self.url + path, data=body, method=method)
-        req.add_header("Content-Type", "application/json")
-        req.add_header("X-HRGA-Token", self.token)
-        req.add_header("User-Agent", "HRGA Asisten")
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                return json.loads(r.read().decode("utf-8") or "{}")
-        except urllib.error.HTTPError as e:
+        last = None
+        for i, base in enumerate(self.urls):
+            req = urllib.request.Request(base + path, data=body, method=method)
+            req.add_header("Content-Type", "application/json")
+            req.add_header("X-HRGA-Token", self.token)
+            req.add_header("User-Agent", "HRGA Asisten")
+            short = i < len(self.urls) - 1          # alamat kantor: jangan menunggu lama di luar kantor
             try:
-                msg = json.loads(e.read().decode("utf-8")).get("error")
-            except ValueError:
-                msg = None
-            raise ServerError(msg or f"App HRGA menjawab {e.code}", e.code)
-        except (urllib.error.URLError, OSError) as e:
-            raise ServerError(f"App HRGA tidak bisa dihubungi: {getattr(e, 'reason', e)}")
+                with urllib.request.urlopen(req, timeout=4 if short else self.timeout) as r:
+                    self.url = base
+                    return json.loads(r.read().decode("utf-8") or "{}")
+            except urllib.error.HTTPError as e:
+                try:
+                    msg = json.loads(e.read().decode("utf-8")).get("error")
+                except ValueError:
+                    msg = None
+                raise ServerError(msg or f"App HRGA menjawab {e.code}", e.code)
+            except (urllib.error.URLError, OSError) as e:
+                last = e
+        raise ServerError(f"App HRGA tidak bisa dihubungi (kantor maupun internet): {getattr(last, 'reason', last)}")
 
     def me(self):
         return self._call("GET", "/api/agent/me")

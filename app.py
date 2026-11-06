@@ -637,7 +637,7 @@ class SettingsDialog(tk.Toplevel):
         except (ValueError, tk.TclError):
             start, end = -1, -1
         if not 0 <= start < end <= 24:
-            messagebox.showerror(settings.APP_NAME, self.app.tr("err_hours"), parent=self)
+            messagebox.showerror(settings.DISPLAY_NAME, self.app.tr("err_hours"), parent=self)
             return False
         lang = next(k for k, v in LANGS.items() if v == self.v_lang.get())
         # Token App HRGA baru: cek dulu ke server sebelum disimpan.
@@ -645,12 +645,13 @@ class SettingsDialog(tk.Toplevel):
         new_token = self.v_iat_token.get().strip()
         if new_token:
             try:
-                me = client.IatClient(iat_url, new_token, timeout=15).me()
+                me = client.IatClient(iat_url, new_token, timeout=15, lan_url=self.app.cfg.get("iat_url_lan", "")).me()
             except client.ServerError as e:
-                messagebox.showerror(settings.APP_NAME, f"Token App HRGA ditolak: {e}", parent=self)
+                messagebox.showerror(settings.DISPLAY_NAME, f"Token App HRGA ditolak: {e}", parent=self)
                 return False
             self.app.cfg.update(iat_token=new_token, iat_user=me.get("full_name") or me.get("username", ""),
                                 send_to="fena")
+            self.app.apply_iat_profile(me)
         self.app.cfg["iat_url"] = iat_url
         self.app.cfg.update(
             name=self.v_name.get().strip(),
@@ -672,7 +673,7 @@ class SettingsDialog(tk.Toplevel):
             if self.v_auto.get() != autostart.is_enabled():
                 autostart.set_enabled(self.v_auto.get())
         except OSError as e:
-            messagebox.showerror(settings.APP_NAME, str(e), parent=self)
+            messagebox.showerror(settings.DISPLAY_NAME, str(e), parent=self)
         return True
 
     def _save(self):
@@ -694,7 +695,7 @@ class SettingsDialog(tk.Toplevel):
     def _logout_all(self):
         if self.app.busy:
             return
-        if messagebox.askyesno(settings.APP_NAME, self.app.tr("confirm_logout_all"), parent=self):
+        if messagebox.askyesno(settings.DISPLAY_NAME, self.app.tr("confirm_logout_all"), parent=self):
             self.destroy()
             self.app.on_logout_all()
 
@@ -716,7 +717,7 @@ class SettingsDialog(tk.Toplevel):
         app, tr = self.app, self.app.tr
         url = client.normalize(self.v_url.get())
         if not url:
-            messagebox.showinfo(settings.APP_NAME, tr("srv_url_hint"), parent=self)
+            messagebox.showinfo(settings.DISPLAY_NAME, tr("srv_url_hint"), parent=self)
             return
         dlg = tk.Toplevel(self, bg=BG)
         dlg.title(tr("srv_login_title"))
@@ -813,9 +814,9 @@ class SettingsDialog(tk.Toplevel):
                 return
             self.funnel_btn.configure(state="normal")
             if ok:
-                messagebox.showinfo(settings.APP_NAME, self.app.tr("funnel_done", u=url), parent=self)
+                messagebox.showinfo(settings.DISPLAY_NAME, self.app.tr("funnel_done", u=url), parent=self)
             else:
-                messagebox.showerror(settings.APP_NAME, self.app.tr("funnel_failed", e=out[:600]), parent=self)
+                messagebox.showerror(settings.DISPLAY_NAME, self.app.tr("funnel_failed", e=out[:600]), parent=self)
             self._funnel_status()
 
         threading.Thread(target=target, daemon=True).start()
@@ -988,7 +989,7 @@ class ChatWindow(tk.Toplevel):
         app = self.app
         remote = app.claude_state == "server"
         if not remote and (app.claude_state != "on" or not app.claude_cli):
-            messagebox.showinfo(settings.APP_NAME, app.tr("chat_no_claude"), parent=self)
+            messagebox.showinfo(settings.DISPLAY_NAME, app.tr("chat_no_claude"), parent=self)
             return
         self.input.delete("1.0", "end")
         if not app.chat_history:
@@ -1308,7 +1309,7 @@ class UsersWindow(SmallWindow):
         self._load()
 
     def _error(self, e):
-        messagebox.showerror(settings.APP_NAME, str(e), parent=self)
+        messagebox.showerror(settings.DISPLAY_NAME, str(e), parent=self)
 
     def _load(self):
         try:
@@ -1339,7 +1340,7 @@ class UsersWindow(SmallWindow):
         except ValueError as e:
             return self._error(e)
         self._load()
-        messagebox.showinfo(settings.APP_NAME, self.app.tr("users_pin_done", u=self._name(uid), p=pin), parent=self)
+        messagebox.showinfo(settings.DISPLAY_NAME, self.app.tr("users_pin_done", u=self._name(uid), p=pin), parent=self)
 
     def on_role(self):
         uid = self._selected()
@@ -1366,7 +1367,7 @@ class UsersWindow(SmallWindow):
         except ValueError as e:
             return self._error(e)
         self._load()
-        messagebox.showinfo(settings.APP_NAME, self.app.tr("users_revoked", n=n, u=self._name(uid)), parent=self)
+        messagebox.showinfo(settings.DISPLAY_NAME, self.app.tr("users_revoked", n=n, u=self._name(uid)), parent=self)
 
     def on_add(self):
         from tkinter import simpledialog
@@ -1375,7 +1376,7 @@ class UsersWindow(SmallWindow):
         if not name or not name.strip():
             return
         title = simpledialog.askstring(settings.APP_NAME, tr("users_add_title"), parent=self) or ""
-        android = messagebox.askyesno(settings.APP_NAME, tr("users_add_android"), parent=self)
+        android = messagebox.askyesno(settings.DISPLAY_NAME, tr("users_add_android"), parent=self)
         try:
             uid = self.backend.add(name.strip(), title.strip(), "member", "android" if android else "laptop")
         except ValueError as e:
@@ -1388,7 +1389,7 @@ class UsersWindow(SmallWindow):
         uid = self._selected()
         if not uid:
             return
-        if messagebox.askyesno(settings.APP_NAME, self.app.tr("users_confirm_remove", u=self._name(uid)), parent=self):
+        if messagebox.askyesno(settings.DISPLAY_NAME, self.app.tr("users_confirm_remove", u=self._name(uid)), parent=self):
             try:
                 self.backend.remove(uid)
             except ValueError as e:
@@ -1404,6 +1405,8 @@ class App:
             self.cfg["server_url"] = default_server_url()
         if not self.cfg.get("iat_url"):
             self.cfg["iat_url"] = default_server_url("iat_url.txt")
+        if not self.cfg.get("iat_url_lan"):
+            self.cfg["iat_url_lan"] = default_server_url("iat_url_lan.txt")
         self.chats = {}
         self.events = queue.Queue()
         self.busy = False
@@ -1426,7 +1429,7 @@ class App:
         self.server = None
         self.apply_server_mode()
 
-        root.title(settings.APP_NAME)
+        root.title(settings.DISPLAY_NAME)
         root.geometry("1220x780")
         root.minsize(1040, 640)
         sv_ttk.set_theme("light")
@@ -1470,6 +1473,7 @@ class App:
                                                  len(national_holidays(date.today().year, self.lang))),
                          daemon=True).start()
         root.after(1500, lambda: self.on_check_update(silent=True))
+        root.after(2500, self.sync_iat_profile)   # profil report terbaru dari App HRGA
 
     @property
     def lang(self):
@@ -1485,7 +1489,7 @@ class App:
             except OSError as e:
                 log.warning("Server gagal: %s", e)
                 self.server = None
-                messagebox.showerror(settings.APP_NAME, self.tr("server_failed", e=e))
+                messagebox.showerror(settings.DISPLAY_NAME, self.tr("server_failed", e=e))
         elif not want and self.server:
             self.server.stop()
             self.server = None
@@ -1933,7 +1937,7 @@ class App:
     def _read_day(self):
         day = parse_day(self.v_date.get())
         if day is None:
-            messagebox.showerror(settings.APP_NAME, self.tr("err_form"))
+            messagebox.showerror(settings.DISPLAY_NAME, self.tr("err_form"))
             return None
         # Tampilkan ulang lengkap dengan nama harinya.
         self.v_date.set(fmt_day(day, self.lang))
@@ -1971,10 +1975,10 @@ class App:
                     self._show_chats(value)
                 elif kind == "info":
                     self.status.set(value)
-                    messagebox.showinfo(settings.APP_NAME, value)
+                    messagebox.showinfo(settings.DISPLAY_NAME, value)
                 elif kind == "error":
                     self.status.set(self.tr("failed") + value)
-                    messagebox.showerror(settings.APP_NAME, value)
+                    messagebox.showerror(settings.DISPLAY_NAME, value)
                 elif kind == "claude":
                     self.claude_local = value
                     self.claude_state = self._effective_claude(value)
@@ -1984,7 +1988,7 @@ class App:
                     self._set_draft(day, text)
                     self.status.set(note)
                     if note != self.tr("generated"):
-                        messagebox.showinfo(settings.APP_NAME, note)
+                        messagebox.showinfo(settings.DISPLAY_NAME, note)
                 elif kind in ("chat_part", "chat_done", "chat_error"):
                     win = self.chat_win
                     if win and win.winfo_exists():
@@ -2314,9 +2318,9 @@ class App:
         if not info:
             return
         if not updater.can_self_update():
-            messagebox.showinfo(settings.APP_NAME, self.tr("update_dev", v=info["version"]))
+            messagebox.showinfo(settings.DISPLAY_NAME, self.tr("update_dev", v=info["version"]))
             return
-        if not messagebox.askyesno(settings.APP_NAME, self.tr("confirm_update", v=info["version"])):
+        if not messagebox.askyesno(settings.DISPLAY_NAME, self.tr("confirm_update", v=info["version"])):
             return
 
         def work():
@@ -2429,7 +2433,7 @@ class App:
             self._show_claude_state()
         self._show_progress((100, self.tr("logout_all"), "", "done"))
         self.status.set(self.tr("logged_out_all"))
-        messagebox.showinfo(settings.APP_NAME, self.tr("logged_out_all"))
+        messagebox.showinfo(settings.DISPLAY_NAME, self.tr("logged_out_all"))
 
     def on_claude_click(self):
         if self.claude_state == "off" and not self.busy:
@@ -2473,7 +2477,7 @@ class App:
             return
         # Report tetap bisa dibuat dari catatan manual saja walau belum tarik chat.
         if not self.chats and not any(n.strip() for n in self.notes):
-            messagebox.showinfo(settings.APP_NAME, self.tr("no_chats"))
+            messagebox.showinfo(settings.DISPLAY_NAME, self.tr("no_chats"))
             return
 
         picked = {n: self.chats[n] for n in self.table.checked()}
@@ -2544,7 +2548,7 @@ class App:
 
         if self.claude_state == "off":
             # Belum login: tawarkan login sekali; kalau ditolak, pakai draf tanpa AI.
-            if messagebox.askyesno(settings.APP_NAME, self.tr("claude_ask_login")):
+            if messagebox.askyesno(settings.DISPLAY_NAME, self.tr("claude_ask_login")):
                 self._claude_login(then=with_claude)
             else:
                 day_, text, _ = fallback(None)
@@ -2568,7 +2572,7 @@ class App:
             return
         text = self._report_text()
         if not text:
-            messagebox.showinfo(settings.APP_NAME, self.tr("empty_draft"))
+            messagebox.showinfo(settings.DISPLAY_NAME, self.tr("empty_draft"))
             return
         settings.ensure_dirs()
         # Versi Indonesia disimpan dulu sebagai cadangan.
@@ -2578,7 +2582,7 @@ class App:
         # Terjemahan memakai Claude (DeepL web sekarang meminta verifikasi CAPTCHA).
         remote = self.claude_state == "server"
         if not remote and (self.claude_state != "on" or not self.claude_cli):
-            messagebox.showinfo(settings.APP_NAME, self.tr("chat_no_claude"))
+            messagebox.showinfo(settings.DISPLAY_NAME, self.tr("chat_no_claude"))
             return
 
         def work():
@@ -2629,7 +2633,7 @@ class App:
             return
         text = self._report_text()
         if not text:
-            messagebox.showinfo(settings.APP_NAME, self.tr("empty_draft"))
+            messagebox.showinfo(settings.DISPLAY_NAME, self.tr("empty_draft"))
             return
         settings.ensure_dirs()
         path = save_pdf(text, report_path(day, "pdf"), asset("logo-wide.png"))
@@ -2642,9 +2646,9 @@ class App:
         if day is None:
             return None
         if not text:
-            messagebox.showinfo(settings.APP_NAME, self.tr("empty_draft"))
+            messagebox.showinfo(settings.DISPLAY_NAME, self.tr("empty_draft"))
             return None
-        if not messagebox.askyesno(settings.APP_NAME, question):
+        if not messagebox.askyesno(settings.DISPLAY_NAME, question):
             return None
         # Simpan hasil edit supaya tidak hilang.
         settings.ensure_dirs()
@@ -2655,7 +2659,7 @@ class App:
     def on_send(self):
         phone = self.cfg["phone"]
         if not phone:
-            messagebox.showinfo(settings.APP_NAME, self.tr("need_phone"))
+            messagebox.showinfo(settings.DISPLAY_NAME, self.tr("need_phone"))
             return
         prepared = self._prepare_send(self.tr("confirm_send"))
         if not prepared:
@@ -2676,6 +2680,39 @@ class App:
 
         self._run(self.tr("opening"), work)
 
+    def apply_iat_profile(self, me):
+        """Profil Report dari App HRGA (nama tampilan, bahasa, item rutin) jadi acuan draf di laptop.
+        Nilai kosong di server tidak menimpa pengaturan lokal."""
+        prof = me.get("profile") or {}
+        changed = False
+        if me.get("display_name") and me["display_name"] != self.cfg.get("name"):
+            self.cfg["name"] = me["display_name"]
+            changed = True
+        if me.get("language") in ("id", "en") and me["language"] != self.cfg.get("lang"):
+            self.cfg["lang"] = me["language"]
+            changed = True
+        if prof.get("routine") and list(prof["routine"]) != list(self.cfg.get("routine") or []):
+            self.cfg["routine"] = list(prof["routine"])
+            changed = True
+        if changed:
+            settings.save(self.cfg)
+        return changed
+
+    def sync_iat_profile(self):
+        """Ambil profil terbaru dari App HRGA di latar belakang (kalau token sudah diisi)."""
+        if not (self.cfg.get("iat_token") and (self.cfg.get("iat_url") or self.cfg.get("iat_url_lan"))):
+            return
+
+        def work():
+            try:
+                me = client.IatClient(self.cfg.get("iat_url", ""), self.cfg["iat_token"], timeout=10,
+                                      lan_url=self.cfg.get("iat_url_lan", "")).me()
+            except client.ServerError:
+                return
+            self.root.after(0, lambda: self.apply_iat_profile(me))
+
+        threading.Thread(target=work, daemon=True).start()
+
     def on_send_fena(self):
         # Utamakan App HRGA (Internal Asset Tracker) kalau token sudah diisi.
         if self.cfg.get("iat_url") and self.cfg.get("iat_token"):
@@ -2687,7 +2724,8 @@ class App:
             def work_iat():
                 self._progress(50, self.tr("sending_fena"))
                 try:
-                    client.IatClient(self.cfg["iat_url"], self.cfg["iat_token"]).submit(day, text)
+                    client.IatClient(self.cfg["iat_url"], self.cfg["iat_token"],
+                                     lan_url=self.cfg.get("iat_url_lan", "")).submit(day, text)
                 except client.ServerError as e:
                     if e.status == 401:
                         raise RuntimeError("Token App HRGA tidak berlaku lagi. Buat token baru di App HRGA.")
@@ -2698,7 +2736,7 @@ class App:
             self._run(self.tr("sending_fena"), work_iat)
             return
         if not (self.cfg.get("server_url") and self.cfg.get("server_token")):
-            messagebox.showinfo(settings.APP_NAME, self.tr("need_server_login"))
+            messagebox.showinfo(settings.DISPLAY_NAME, self.tr("need_server_login"))
             return
         prepared = self._prepare_send(self.tr("confirm_send_fena"))
         if not prepared:
