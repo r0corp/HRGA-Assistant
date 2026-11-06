@@ -1698,6 +1698,7 @@ class App:
         main = tk.Frame(self.root, bg=BG)
         main.pack(side="left", fill="both", expand=True)
         self._build_topbar(main)
+        self._build_retire_banner(main)
         self._build_timeline(main)
 
         cols = tk.Frame(main, bg=BG)
@@ -1837,6 +1838,36 @@ class App:
         # Banner "versi baru tersedia" mengisi sisa baris judul, dari kanan sampai dekat judul.
         self.update_slot = tk.Frame(top, bg=CARD)
         self.update_slot.pack(side="left", fill="x", expand=True, padx=(28, 0))
+
+    def _build_retire_banner(self, main):
+        """Rilis terakhir: HRGA Asisten digantikan aplikasi HRGA Hub (report lewat App HRGA)."""
+        card_ = RoundCard(main, fill="#fff4e5", outline="#f5c27a")
+        card_.pack(fill="x", padx=24, pady=(0, 14))
+        row = tk.Frame(card_.body, bg="#fff4e5")
+        row.pack(fill="x", padx=14, pady=10)
+        label(row, "⚠  " + self.tr("retire_title"), 10, TEXT, True, bg="#fff4e5").pack(anchor="w")
+        label(row, self.tr("retire_text"), 9, TEXT, bg="#fff4e5", wraplength=760, justify="left").pack(anchor="w", pady=(2, 6))
+        FlatButton(row, "⬇  " + self.tr("retire_button"), self.on_get_hrga_hub, "primary", small=True).pack(anchor="w")
+
+    def on_get_hrga_hub(self):
+        """Buka halaman unduh HRGA Hub di App HRGA (alamat kantor dulu, lalu internet)."""
+        import urllib.error
+        import urllib.request
+        import webbrowser
+
+        def reachable(url):
+            try:
+                urllib.request.urlopen(urllib.request.Request(url + "/login", headers={"User-Agent": "HRGA Asisten"}),
+                                       timeout=4).close()
+                return True
+            except urllib.error.HTTPError:
+                return True
+            except Exception:
+                return False
+
+        urls = [client.normalize(u) for u in (self.cfg.get("iat_url_lan"), self.cfg.get("iat_url")) if u]
+        base = next((u for u in urls if reachable(u)), urls[-1] if urls else "")
+        webbrowser.open(base + "/unduh/hrga-hub")
 
     def _build_timeline(self, main):
         """Riwayat report ke grup untuk 5 hari kerja terakhir."""
