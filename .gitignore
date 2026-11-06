@@ -7,3 +7,4 @@ dist/
 installer/*.bmp
 # Alamat server HRGA, ditanam saat build (tidak dipublikasikan di repo)
 assets/server_url.txt
+assets/iat_url.txt

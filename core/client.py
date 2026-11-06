@@ -18,6 +18,41 @@ def normalize(url):
     return url
 
 
+class IatClient:
+    """Klien App HRGA (Internal Asset Tracker): kirim report dengan token pribadi dari halaman HRGA Asisten."""
+
+    def __init__(self, url, token, timeout=30):
+        self.url = normalize(url)
+        self.token = (token or "").strip()
+        self.timeout = timeout
+
+    def _call(self, method, path, data=None):
+        if not self.url:
+            raise ServerError("Alamat App HRGA belum diisi di Pengaturan")
+        body = json.dumps(data).encode("utf-8") if data is not None else None
+        req = urllib.request.Request(self.url + path, data=body, method=method)
+        req.add_header("Content-Type", "application/json")
+        req.add_header("X-HRGA-Token", self.token)
+        req.add_header("User-Agent", "HRGA Asisten")
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                return json.loads(r.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as e:
+            try:
+                msg = json.loads(e.read().decode("utf-8")).get("error")
+            except ValueError:
+                msg = None
+            raise ServerError(msg or f"App HRGA menjawab {e.code}", e.code)
+        except (urllib.error.URLError, OSError) as e:
+            raise ServerError(f"App HRGA tidak bisa dihubungi: {getattr(e, 'reason', e)}")
+
+    def me(self):
+        return self._call("GET", "/api/agent/me")
+
+    def submit(self, day, text):
+        return self._call("POST", "/api/agent/report", {"date": day.isoformat(), "text": text, "submit": True})
+
+
 class Client:
     def __init__(self, url, token=None, timeout=30):
         self.url = normalize(url)

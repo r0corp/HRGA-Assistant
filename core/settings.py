@@ -38,6 +38,10 @@ DEFAULTS = {
     "server_mode": False,
     # Laptop: alamat server HRGA (Tailscale Funnel) dan sesi login ke sana.
     "server_url": "",
+    # App HRGA (Internal Asset Tracker): alamat + token pribadi HRGA Asisten.
+    "iat_url": "",
+    "iat_token": "",
+    "iat_user": "",
     "server_user": "",
     "server_role": "",
     "server_token": "",

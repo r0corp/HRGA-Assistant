@@ -52,9 +52,9 @@ def asset(name):
     return os.path.join(base, "assets", name)
 
 
-def default_server_url():
+def default_server_url(name="server_url.txt"):
     try:
-        with open(asset("server_url.txt"), encoding="utf-8") as f:
+        with open(asset(name), encoding="utf-8") as f:
             return client.normalize(f.read())
     except OSError:
         return ""
@@ -571,6 +571,18 @@ class SettingsDialog(tk.Toplevel):
                 anchor="w", pady=(8, 0))
         if logged and not app.server and app.is_user_admin:
             FlatButton(box, tr("users"), lambda: UsersWindow(app, self), small=True).pack(anchor="w", pady=(8, 0))
+
+        # App HRGA (Internal Asset Tracker): report dikirim ke sana dengan token pribadi.
+        self.v_iat_url = tk.StringVar(value=cfg.get("iat_url", ""))
+        self.v_iat_token = tk.StringVar(value="")
+        iat_user = cfg.get("iat_user", "")
+        label(box, "App HRGA", 9, TEXT, True).pack(anchor="w", pady=(10, 0))
+        label(box, ("● Terhubung sebagai " + iat_user) if cfg.get("iat_token") else "○ Belum terhubung", 8,
+              GREEN if cfg.get("iat_token") else MUTED).pack(anchor="w")
+        if full or not cfg.get("iat_url"):
+            self._field(box, "Alamat App HRGA", ttk.Entry(box, textvariable=self.v_iat_url, width=40))
+        self._field(box, "Token HRGA Asisten", ttk.Entry(box, textvariable=self.v_iat_token, width=40, show="•"),
+                    "Dari App HRGA → Report Harian → HRGA Asisten → Buat token")
         if app.server:
             row = tk.Frame(box, bg=CARD)
             row.pack(fill="x", pady=(4, 0))
@@ -623,6 +635,18 @@ class SettingsDialog(tk.Toplevel):
             messagebox.showerror(settings.APP_NAME, self.app.tr("err_hours"), parent=self)
             return False
         lang = next(k for k, v in LANGS.items() if v == self.v_lang.get())
+        # Token App HRGA baru: cek dulu ke server sebelum disimpan.
+        iat_url = client.normalize(self.v_iat_url.get()) or self.app.cfg.get("iat_url", "")
+        new_token = self.v_iat_token.get().strip()
+        if new_token:
+            try:
+                me = client.IatClient(iat_url, new_token, timeout=15).me()
+            except client.ServerError as e:
+                messagebox.showerror(settings.APP_NAME, f"Token App HRGA ditolak: {e}", parent=self)
+                return False
+            self.app.cfg.update(iat_token=new_token, iat_user=me.get("full_name") or me.get("username", ""),
+                                send_to="fena")
+        self.app.cfg["iat_url"] = iat_url
         self.app.cfg.update(
             name=self.v_name.get().strip(),
             phone=self.v_phone.get().strip(),
@@ -1373,6 +1397,8 @@ class App:
         self.cfg = settings.load()
         if not self.cfg.get("server_url"):
             self.cfg["server_url"] = default_server_url()
+        if not self.cfg.get("iat_url"):
+            self.cfg["iat_url"] = default_server_url("iat_url.txt")
         self.chats = {}
         self.events = queue.Queue()
         self.busy = False
@@ -2634,6 +2660,26 @@ class App:
         self._run(self.tr("opening"), work)
 
     def on_send_fena(self):
+        # Utamakan App HRGA (Internal Asset Tracker) kalau token sudah diisi.
+        if self.cfg.get("iat_url") and self.cfg.get("iat_token"):
+            prepared = self._prepare_send(self.tr("confirm_send_fena"))
+            if not prepared:
+                return
+            day, text = prepared
+
+            def work_iat():
+                self._progress(50, self.tr("sending_fena"))
+                try:
+                    client.IatClient(self.cfg["iat_url"], self.cfg["iat_token"]).submit(day, text)
+                except client.ServerError as e:
+                    if e.status == 401:
+                        raise RuntimeError("Token App HRGA tidak berlaku lagi. Buat token baru di App HRGA.")
+                    raise RuntimeError(str(e))
+                self.events.put(("history", history.mark_sent(settings.HISTORY_FILE, day)))
+                self.events.put(("info", self.tr("sent_fena")))
+
+            self._run(self.tr("sending_fena"), work_iat)
+            return
         if not (self.cfg.get("server_url") and self.cfg.get("server_token")):
             messagebox.showinfo(settings.APP_NAME, self.tr("need_server_login"))
             return
