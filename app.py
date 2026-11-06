@@ -1525,9 +1525,10 @@ class App:
     def __init__(self, root):
         self.root = root
         self.cfg = settings.load()
-        # Jam baca bawaan lama (06-17) membuang pekerjaan sore; pindahkan ke bawaan baru 06-21 sekali saja.
-        if (self.cfg.get("start_hour"), self.cfg.get("end_hour")) == (6, 17) and not self.cfg.get("hours_v2"):
-            self.cfg.update(end_hour=21, hours_v2=True)
+        # Jam baca bawaan lama (06-17 / 06-21) membuang chat malam & dini hari; pindahkan sekali ke
+        # bawaan baru 00-24 (orang project bisa menghubungi kapan saja). Jam yang diatur sendiri tidak diubah.
+        if (self.cfg.get("start_hour"), self.cfg.get("end_hour")) in ((6, 17), (6, 21)) and not self.cfg.get("hours_v3"):
+            self.cfg.update(start_hour=0, end_hour=24, hours_v3=True)
             settings.save(self.cfg)
         if not self.cfg.get("server_url"):
             self.cfg["server_url"] = default_server_url()

@@ -26,8 +26,8 @@ REPORT_GROUP = "GRUP TEAM HRGA"
 DEFAULTS = {
     "name": "",
     "phone": "",
-    "start_hour": 6,
-    "end_hour": 21,            # sampai batas kirim report (21:00), supaya kerja sore tidak terbuang
+    "start_hour": 0,           # dibaca sepanjang hari: orang project bisa menghubungi kapan saja
+    "end_hour": 24,
     "lang": "en",              # bahasa bawaan instalasi baru: English
     # Pekerjaan rutin harian yang selalu masuk report, diselipkan di nomor acak.
     "routine": [],

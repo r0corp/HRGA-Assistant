@@ -36,6 +36,7 @@ RULES = {
 - Jangan tulis harga, nomor, atau spesifikasi panjang; cukup inti pekerjaannya dan hasilnya.
 - Jangan mengarang. Semua isi harus berasal dari chat. Kalau statusnya tidak jelas, tulis apa adanya.
 - Jangan pernah menulis password, OTP, PIN, atau nomor rekening.
+- Chat dari nomor yang tidak tersimpan (nama chat/pengirim berupa nomor HP) tetap pekerjaan; masukkan seperti chat lain dan sebut orangnya "kontak tanpa nama" (atau nama yang ia sebutkan di chat), tanpa menulis nomornya.
 - Nama orang: buang awalan "TCI". Pakai sapaan pak/bu/mba/mas hanya kalau terlihat dari chat; kalau ragu, tulis namanya saja.
 - "Saya" di chat adalah penulis report ({name}).
 {routine}- Bahasa report: Bahasa Indonesia.
@@ -60,6 +61,7 @@ Contoh gaya penulisan (nama dan isi hanya contoh):
 - Do not write prices, numbers, or long specifications; keep only the core task and result.
 - Do not invent anything. Everything must come from the chats. If the status is unclear, say so.
 - Never write passwords, OTPs, PINs, or account numbers.
+- Chats from unsaved numbers (chat/sender name is a phone number) are still work; include them like any other chat and call the person "an unsaved contact" (or the name they give in the chat), without writing the number.
 - People's names: drop the "TCI" prefix. Keep Indonesian honorifics (pak/bu/mba/mas) as they are, only when visible in the chat.
 - "Saya" in the chats is the report author ({name}).
 {routine}- Report language: English. Translate the content into natural English.

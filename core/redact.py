@@ -11,8 +11,9 @@ AFTER_KEYWORD_RE = re.compile(
 # Pesan yang isinya hanya angka 4-8 digit (OTP / PIN yang dikirim sendirian).
 ONLY_CODE_RE = re.compile(r"^\s*\d{4,8}\s*$")
 
-# Nomor rekening / kartu: 10-16 digit berurutan.
-ACCOUNT_RE = re.compile(r"\b\d{10,16}\b")
+# Nomor rekening / kartu: 10-16 digit berurutan. Nomor HP Indonesia (08..., 62..., +62...)
+# tidak disamarkan: kontak yang tidak tersimpan tetap bagian dari pekerjaan.
+ACCOUNT_RE = re.compile(r"(?<!\+)\b(?!08\d{8,11}\b)(?!628\d{7,11}\b)\d{10,16}\b")
 
 # Token campuran huruf+angka (pola password), tanpa @ / . supaya email,
 # link, dan nama file tidak ikut tersamarkan.

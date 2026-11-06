@@ -40,3 +40,19 @@ def test_media_without_separator_uses_previous_text_date():
     ]
     msgs = build_messages(raw, TODAY, "DMY", today=TODAY)
     assert msgs[-1]["text"] == "[Foto]" and msgs[-1]["time"] == "2026-11-06T10:01"
+
+
+def test_phone_numbers_kept_but_secrets_masked():
+    from core.redact import redact
+    assert redact("hubungi 081234567890 ya") == "hubungi 081234567890 ya"
+    assert redact("wa 6281234567890") == "wa 6281234567890"
+    assert "[disamarkan]" in redact("rek BCA 1234567890")
+    assert redact("otp 123456") == "otp [disamarkan]"
+
+
+def test_whole_day_by_default():
+    from core import settings
+    from core.summary import in_window
+    assert (settings.DEFAULTS["start_hour"], settings.DEFAULTS["end_hour"]) == (0, 24)
+    assert in_window({"time": "2026-11-06T23:40"}, date(2026, 11, 6), 0, 24)
+    assert in_window({"time": "2026-11-06T00:15"}, date(2026, 11, 6), 0, 24)
