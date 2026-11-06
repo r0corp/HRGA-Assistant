@@ -633,8 +633,7 @@ class SettingsDialog(tk.Toplevel):
         box = self._group(left, tr("about"))
         row = tk.Frame(box, bg=CARD)
         row.pack(fill="x")
-        label(row, f"{settings.APP_NAME}  ·  " + tr("version", v=updater.VERSION), 9, MUTED).pack(side="left")
-        FlatButton(row, tr("check_update"), lambda: app.on_check_update(), small=True).pack(side="right")
+        label(row, f"{settings.DISPLAY_NAME}  ·  " + tr("version", v=updater.VERSION), 9, MUTED).pack(side="left")
         label(box, tr("credit"), 9, MUTED).pack(anchor="w", pady=(6, 0))
 
         # Ukuran dialog: selebar isi (3 kolom), setinggi isi tapi tidak melebihi layar.
@@ -1792,8 +1791,14 @@ class App:
         foot = tk.Frame(inner, bg=SIDE)
         foot.pack(side="bottom", fill="x")
         gear = FlatButton(foot, "⚙  " + self.tr("open_settings"), self.on_settings, anchor="w")
-        gear.pack(fill="x", pady=(8, 8))
+        gear.pack(fill="x", pady=(8, 6))
         self.buttons.append(gear)
+        # Cek update langsung dari sidebar (tepat di bawah Pengaturan), bukan di dalam Pengaturan.
+        # Sekali klik: cek versi terbaru lalu langsung download & pasang. Tetap bisa diklik saat app sibuk
+        # (update dijalankan begitu proses yang sedang berjalan selesai).
+        upd = FlatButton(foot, "↻  " + self.tr("check_update"), lambda: self.on_check_update(install=True),
+                         anchor="w")
+        upd.pack(fill="x", pady=(0, 8))
         label(foot, self.tr("version", v=updater.VERSION) + "  ·  IT Support", 8, MUTED).pack(anchor="w")
 
     def _build_topbar(self, main):
@@ -2178,6 +2183,9 @@ class App:
                 elif kind == "update":
                     self.update_info = value
                     self._show_update()
+                elif kind == "update_now":
+                    self.update_info = value
+                    self.on_update(confirm=False)
                 elif kind == "quit":
                     self.root.destroy()
                     return
@@ -2503,8 +2511,9 @@ class App:
         self._show_wa_state()
         self._run(self.tr("wa_checking"), work, stoppable=True)
 
-    def on_check_update(self, silent=False):
-        """Cek rilis terbaru di GitHub; tidak memakai browser, jadi jalan terpisah."""
+    def on_check_update(self, silent=False, install=False):
+        """Cek rilis terbaru di GitHub; tidak memakai browser, jadi jalan terpisah.
+        install=True (tombol Cek update di sidebar): kalau ada versi baru, langsung download & pasang."""
         if not silent:
             self.status.set(self.tr("checking"))
 
@@ -2519,19 +2528,21 @@ class App:
             if not silent:
                 self.update_dismissed = None
             self.events.put(("update", info))
+            if info and install:
+                self.events.put(("update_now", info))
             if info is None and not silent:
                 self.events.put(("info", self.tr("up_to_date", v=updater.VERSION)))
 
         threading.Thread(target=target, daemon=True).start()
 
-    def on_update(self):
+    def on_update(self, confirm=True):
         info = self.update_info
         if not info:
             return
         if not updater.can_self_update():
             messagebox.showinfo(settings.DISPLAY_NAME, self.tr("update_dev", v=info["version"]))
             return
-        if not messagebox.askyesno(settings.DISPLAY_NAME, self.tr("confirm_update", v=info["version"])):
+        if confirm and not messagebox.askyesno(settings.DISPLAY_NAME, self.tr("confirm_update", v=info["version"])):
             return
 
         def work():
