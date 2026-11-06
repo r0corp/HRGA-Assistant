@@ -28,16 +28,21 @@ from core.summary import build_report, in_window, parse_nicknames, report_title
 
 log = logging.getLogger("app")
 
-# Warna: sidebar abu-abu muda dan kartu putih (gaya RustDesk), aksen merah Tradecorp.
-RED = "#c8102e"
-RED_DARK = "#a50d26"
+# Warna: sidebar putih dan kartu putih di atas latar abu-abu muda, seperti HRGA Hub.
+# Warna mengikuti HRGA Hub (template Orulabs): biru utama untuk aksi & aksen,
+# merah hanya untuk tanda bahaya (belum report, error, hari libur).
+PRIMARY = "#0190fb"
+PRIMARY_DARK = "#0170c4"
+PRIMARY_SUBTLE = "#e1f1fe"
+RED = "#dc3545"
+RED_DARK = "#b02a37"
 GREEN = "#1a9f4b"
 AMBER = "#e0a100"
-SIDE = "#eef0f3"
-BG = "#f7f8fa"
+SIDE = "#ffffff"
+BG = "#f3f5fa"
 CARD = "#ffffff"
-BORDER = "#e1e4e8"
-TEXT = "#1f2328"
+BORDER = "#e3e7ee"
+TEXT = "#1f2937"
 MUTED = "#6b7280"
 FONT = "Segoe UI"
 # Warna kertas ala Sticky Notes.
@@ -159,7 +164,7 @@ def rounded_rect(canvas, x1, y1, x2, y2, r, **kw):
 
 
 class FlatButton(tk.Canvas):
-    """Tombol bersudut bulat: "primary" merah, "secondary" putih bergaris, "ghost" tanpa garis.
+    """Tombol bersudut bulat: "primary" biru, "secondary" putih bergaris, "ghost" tanpa garis.
 
     Digambar di canvas karena tk.Button tidak bisa bersudut bulat. Mendukung
     configure(state="disabled"/"normal") seperti tombol biasa.
@@ -167,9 +172,9 @@ class FlatButton(tk.Canvas):
 
     COLORS = {
         # (isi, teks, isi saat hover, garis tepi)
-        "primary": (RED, "white", RED_DARK, RED),
-        "secondary": (CARD, TEXT, "#f1f3f5", BORDER),
-        "ghost": (None, RED, None, None),
+        "primary": (PRIMARY, "white", PRIMARY_DARK, PRIMARY),
+        "secondary": (CARD, TEXT, PRIMARY_SUBTLE, BORDER),
+        "ghost": (None, PRIMARY, None, None),
         "note": (NOTE_SMALL, TEXT, NOTE_BAR, NOTE_SMALL),
         "note_active": (NOTE_BAR, TEXT, NOTE_BAR, "#e6c84f"),
     }
@@ -240,15 +245,15 @@ def label(parent, text, size=9, color=TEXT, bold=False, **kw):
 
 
 class ProgressBar(tk.Canvas):
-    """Bar progres bersudut bulat: merah saat berjalan, hijau saat selesai."""
+    """Bar progres bersudut bulat: biru saat berjalan, hijau saat selesai."""
 
     def __init__(self, parent, height=8):
         super().__init__(parent, height=height, bg=parent["bg"], highlightthickness=0, bd=0)
         self.value = 0
-        self.color = RED
+        self.color = PRIMARY
         self.bind("<Configure>", lambda e: self._draw())
 
-    def set(self, value, color=RED):
+    def set(self, value, color=PRIMARY):
         self.value, self.color = max(0, min(100, value)), color
         self._draw()
 
@@ -435,19 +440,19 @@ class CalendarPopup(RoundCard):
         for row, week in enumerate(weeks, start=2):
             for col, d in enumerate(week):
                 picked = d == self.selected
-                bg = RED if picked else CARD
+                bg = PRIMARY if picked else CARD
                 fg = "white" if picked else (TEXT if d.month == self.month.month else "#c0c4ca")
                 cell = tk.Label(self.grid_box, text=str(d.day), bg=bg, fg=fg, width=4, pady=4, cursor="hand2",
                                 font=(FONT, 9, "bold" if d == today or picked else "normal"))
                 if d == today and not picked:
-                    cell.configure(fg=RED)
+                    cell.configure(fg=PRIMARY)
                 # Libur nasional ditandai merah seperti hari Minggu.
                 if (d in off or col == 6) and not picked and d.month == self.month.month:
                     cell.configure(fg=RED)
                 cell.grid(row=row, column=col, padx=1, pady=1)
                 cell.bind("<Button-1>", lambda e, d=d: self._pick(d))
                 if not picked:
-                    cell.bind("<Enter>", lambda e, c=cell: c.configure(bg="#f6d5db"))
+                    cell.bind("<Enter>", lambda e, c=cell: c.configure(bg=PRIMARY_SUBTLE))
                     cell.bind("<Leave>", lambda e, c=cell: c.configure(bg=CARD))
 
         label(self.side, t(self.lang, "holidays_title"), 9, TEXT, True, bg=CARD).pack(anchor="w")
@@ -461,7 +466,7 @@ class CalendarPopup(RoundCard):
         for d, name in month_off:
             row = tk.Frame(self.side, bg=CARD)
             row.pack(fill="x", pady=(0, 6))
-            label(row, f"{d.day:2d}", 10, RED, True, bg=CARD, width=3, anchor="w").pack(side="left", anchor="n")
+            label(row, f"{d.day:2d}", 10, PRIMARY, True, bg=CARD, width=3, anchor="w").pack(side="left", anchor="n")
             label(row, f"{DAYS_SHORT[self.lang][d.weekday()]} \u00b7 {name}", 9, TEXT, bg=CARD,
                   wraplength=140, justify="left").pack(side="left", anchor="n")
 
@@ -519,17 +524,17 @@ class SettingsDialog(tk.Toplevel):
             ttk.Spinbox(row, from_=1, to=24, textvariable=self.v_end, width=5).pack(side="left")
             self._field(box, tr("work_hours"), row)
             self.exclude = tk.Text(box, height=3, width=40, font=(FONT, 9), relief="flat", bd=0,
-                                   highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
+                                   highlightthickness=1, highlightbackground=BORDER, highlightcolor=PRIMARY,
                                    padx=6, pady=4, wrap="word")
             self.exclude.insert("1.0", "; ".join(cfg["exclude"]))
             self._field(box, tr("advanced"), self.exclude)
         self.routine = tk.Text(box, height=3, width=40, font=(FONT, 9), relief="flat", bd=0,
-                               highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
+                               highlightthickness=1, highlightbackground=BORDER, highlightcolor=PRIMARY,
                                padx=6, pady=4, wrap="word")
         self.routine.insert("1.0", "\n".join(cfg["routine"]))
         self._field(box, tr("routine"), self.routine, tr("routine_hint"))
         self.nicknames = tk.Text(box, height=3, width=40, font=(FONT, 9), relief="flat", bd=0,
-                                 highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
+                                 highlightthickness=1, highlightbackground=BORDER, highlightcolor=PRIMARY,
                                  padx=6, pady=4, wrap="word")
         self.nicknames.insert("1.0", "\n".join(f"{n} = {h}" for n, h in cfg.get("nicknames", {}).items()))
         self._field(box, tr("nicknames"), self.nicknames, tr("nicknames_hint"))
@@ -858,7 +863,7 @@ class ChatWindow(tk.Toplevel):
         head.pack(fill="x", padx=14, pady=(12, 0))
         label(head, "💬  " + tr("chat_title"), 11, TEXT, True, bg=SIDE).pack(side="left")
         FlatButton(head, tr("chat_clear"), self.clear, "ghost", small=True).pack(side="right")
-        tk.Frame(self, bg=RED, height=3, width=40).pack(anchor="w", padx=14, pady=(6, 6))
+        tk.Frame(self, bg=PRIMARY, height=3, width=40).pack(anchor="w", padx=14, pady=(6, 6))
         ttk.Style().configure("Side.TCheckbutton", background=SIDE, font=(FONT, 8))
         ttk.Checkbutton(self, text=tr("chat_context"), variable=self.v_ctx,
                         style="Side.TCheckbutton").pack(anchor="w", padx=12)
@@ -874,7 +879,7 @@ class ChatWindow(tk.Toplevel):
         self.stop_btn = FlatButton(btns, tr("chat_stop"), self.stop, small=True)
         self.stop_btn.pack(fill="x", pady=(4, 0))
         self.input = tk.Text(box, height=3, wrap="word", font=(FONT, 9), relief="flat", bd=0,
-                             highlightthickness=1, highlightbackground=BORDER, highlightcolor=RED,
+                             highlightthickness=1, highlightbackground=BORDER, highlightcolor=PRIMARY,
                              padx=8, pady=6, undo=True)
         self.input.pack(side="left", fill="both", expand=True)
 
@@ -890,7 +895,7 @@ class ChatWindow(tk.Toplevel):
         self.log.configure(yscrollcommand=bar.set)
         bar.pack(side="right", fill="y")
         self.log.pack(side="left", fill="both", expand=True)
-        self.log.tag_configure("who_user", foreground=RED, font=(FONT, 8, "bold"), spacing1=8)
+        self.log.tag_configure("who_user", foreground=PRIMARY, font=(FONT, 8, "bold"), spacing1=8)
         self.log.tag_configure("who_ai", foreground=MUTED, font=(FONT, 8, "bold"), spacing1=8)
         # Pesan sendiri berlatar merah muda, jawaban Claude berlatar kertas kuning seperti draf.
         self.log.tag_configure("user", background="#fbe9ec", lmargin1=4, lmargin2=4, rmargin=4)
@@ -1089,7 +1094,7 @@ class SmallWindow(tk.Toplevel):
         self.head = tk.Frame(self, bg=SIDE)
         self.head.pack(fill="x", padx=14, pady=(12, 0))
         label(self.head, title, 11, TEXT, True, bg=SIDE).pack(side="left")
-        tk.Frame(self, bg=RED, height=3, width=40).pack(anchor="w", padx=14, pady=(6, 8))
+        tk.Frame(self, bg=PRIMARY, height=3, width=40).pack(anchor="w", padx=14, pady=(6, 8))
 
 
 class TeamWindow(SmallWindow):
@@ -1577,11 +1582,11 @@ class App:
         inner = tk.Frame(side, bg=SIDE)
         inner.pack(fill="both", expand=True, padx=22, pady=20)
 
-        # Kop: logo Tradecorp dengan garis merah di bawahnya.
+        # Kop: logo Tradecorp dengan garis biru (warna utama HRGA Hub) di bawahnya.
         if self.logo:
             tk.Label(inner, image=self.logo, bg=SIDE).pack(anchor="w")
         label(inner, "PT Tradecorp Indonesia", 9, MUTED).pack(anchor="w", pady=(4, 0))
-        tk.Frame(inner, bg=RED, height=3, width=56).pack(anchor="w", pady=(10, 18))
+        tk.Frame(inner, bg=PRIMARY, height=3, width=56).pack(anchor="w", pady=(10, 18))
 
         # Status WhatsApp; klik untuk cek ulang.
         card_ = RoundCard(inner, radius=10)
@@ -1657,11 +1662,23 @@ class App:
         label(foot, self.tr("version", v=updater.VERSION) + "  ·  IT Support", 8, MUTED).pack(anchor="w")
 
     def _build_topbar(self, main):
-        top = tk.Frame(main, bg=BG)
-        top.pack(fill="x", padx=24, pady=(20, 14))
-        label(top, "HRGA Daily Report", 18, TEXT, True).pack(side="left")
+        """Judul halaman seperti page header HRGA Hub: kartu putih, garis biru di atas, ikon + judul."""
+        card_ = RoundCard(main)
+        card_.pack(fill="x", padx=24, pady=(18, 14))
+        tk.Frame(card_.body, bg=PRIMARY, height=3).pack(fill="x")
+        top = tk.Frame(card_.body, bg=CARD)
+        top.pack(fill="x", padx=14, pady=(10, 12))
+        icon = tk.Canvas(top, width=44, height=44, bg=CARD, highlightthickness=0)
+        rounded_rect(icon, 1, 1, 43, 43, 12, fill=PRIMARY, outline=PRIMARY)
+        icon.create_text(22, 22, text="", fill="white", font=("Segoe MDL2 Assets", 15))
+        icon.pack(side="left", padx=(0, 12))
+        titles = tk.Frame(top, bg=CARD)
+        titles.pack(side="left")
+        label(titles, "HRGA Asisten", 15, TEXT, True, bg=CARD).pack(anchor="w")
+        label(titles, "Report harian dari chat WhatsApp, dirapikan Claude, dikirim ke App HRGA", 9, MUTED,
+              bg=CARD).pack(anchor="w")
         # Banner "versi baru tersedia" mengisi sisa baris judul, dari kanan sampai dekat judul.
-        self.update_slot = tk.Frame(top, bg=BG)
+        self.update_slot = tk.Frame(top, bg=CARD)
         self.update_slot.pack(side="left", fill="x", expand=True, padx=(28, 0))
 
     def _build_timeline(self, main):
@@ -1827,7 +1844,7 @@ class App:
         banner = RoundCard(self.update_slot, radius=10)
         banner.pack(fill="x")
         body = banner.body
-        label(body, "\u2b06", 11, RED, True, bg=CARD).pack(side="left", padx=(12, 6), pady=6)
+        label(body, "\u2b06", 11, PRIMARY, True, bg=CARD).pack(side="left", padx=(12, 6), pady=6)
         label(body, self.tr("update_available", v=self.update_info["version"]), 9, TEXT, True, bg=CARD).pack(side="left")
         close = label(body, "\u2715", 9, MUTED, bg=CARD, cursor="hand2")
         close.pack(side="right", padx=(8, 12))
@@ -1864,7 +1881,7 @@ class App:
         self.prog_text.configure(text=title)
         self.prog_pct.configure(text=text, fg=color)
         self.prog_note.configure(text=note)
-        self.prog_bar.set(pct, GREEN if kind == "done" else RED)
+        self.prog_bar.set(pct, GREEN if kind == "done" else PRIMARY)
 
     def _progress(self, pct, note=""):
         """Dipanggil dari thread kerja: perbarui persentase panel progres."""
