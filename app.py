@@ -492,7 +492,7 @@ class SettingsDialog(tk.Toplevel):
         self.v_phone = tk.StringVar(value=cfg["phone"])
         self.v_start = tk.IntVar(value=cfg["start_hour"])
         self.v_end = tk.IntVar(value=cfg["end_hour"])
-        self.v_lang = tk.StringVar(value=LANGS.get(cfg["lang"], LANGS["id"]))
+        self.v_lang = tk.StringVar(value=LANGS.get(cfg["lang"], LANGS["en"]))
         self.v_auto = tk.BooleanVar(value=autostart.is_enabled())
 
         # Tombol Simpan/Batal dipasang lebih dulu supaya selalu terlihat di bawah, apa pun ukuran layar.
@@ -539,12 +539,13 @@ class SettingsDialog(tk.Toplevel):
         self._field(box, tr("group"), label(box, settings.REPORT_GROUP, 10, TEXT, True), tr("group_hint"))
         # Pengaturan rumit (jam kerja, chat diabaikan, server) hanya untuk Administrator / PC server.
         full = self.full = app.is_user_admin
+        # Jam kerja bisa diatur semua user (dulu hanya Administrator): pesan di luar jam ini tidak dihitung.
+        row = tk.Frame(box, bg=CARD)
+        ttk.Spinbox(row, from_=0, to=23, textvariable=self.v_start, width=5).pack(side="left")
+        label(row, tr("to"), 9, MUTED).pack(side="left", padx=8)
+        ttk.Spinbox(row, from_=1, to=24, textvariable=self.v_end, width=5).pack(side="left")
+        self._field(box, tr("work_hours"), row, tr("work_hours_hint"))
         if full:
-            row = tk.Frame(box, bg=CARD)
-            ttk.Spinbox(row, from_=0, to=23, textvariable=self.v_start, width=5).pack(side="left")
-            label(row, tr("to"), 9, MUTED).pack(side="left", padx=8)
-            ttk.Spinbox(row, from_=1, to=24, textvariable=self.v_end, width=5).pack(side="left")
-            self._field(box, tr("work_hours"), row)
             self.exclude = tk.Text(box, height=3, width=40, font=(FONT, 9), relief="flat", bd=0,
                                    highlightthickness=1, highlightbackground=BORDER, highlightcolor=PRIMARY,
                                    padx=6, pady=4, wrap="word")
@@ -1524,6 +1525,10 @@ class App:
     def __init__(self, root):
         self.root = root
         self.cfg = settings.load()
+        # Jam baca bawaan lama (06-17) membuang pekerjaan sore; pindahkan ke bawaan baru 06-21 sekali saja.
+        if (self.cfg.get("start_hour"), self.cfg.get("end_hour")) == (6, 17) and not self.cfg.get("hours_v2"):
+            self.cfg.update(end_hour=21, hours_v2=True)
+            settings.save(self.cfg)
         if not self.cfg.get("server_url"):
             self.cfg["server_url"] = default_server_url()
         if not self.cfg.get("iat_url"):
@@ -1664,6 +1669,14 @@ class App:
                     borderwidth=0)
         s.configure("Chat.Treeview.Heading", font=(FONT, 9, "bold"), foreground=MUTED)
 
+    def on_switch_lang(self, lang):
+        """Tombol bahasa di sidebar: simpan pilihan lalu bangun ulang tampilan."""
+        if self.busy:
+            return
+        self.cfg["lang"] = lang
+        settings.save(self.cfg)
+        self.refresh()
+
     def refresh(self):
         """Bangun ulang jendela, mis. setelah bahasa atau pengaturan diganti."""
         day = parse_day(self.v_date.get())
@@ -1794,11 +1807,14 @@ class App:
         gear.pack(fill="x", pady=(8, 6))
         self.buttons.append(gear)
         # Cek update langsung dari sidebar (tepat di bawah Pengaturan), bukan di dalam Pengaturan.
-        # Sekali klik: cek versi terbaru lalu langsung download & pasang. Tetap bisa diklik saat app sibuk
-        # (update dijalankan begitu proses yang sedang berjalan selesai).
-        upd = FlatButton(foot, "↻  " + self.tr("check_update"), lambda: self.on_check_update(install=True),
-                         anchor="w")
-        upd.pack(fill="x", pady=(0, 8))
+        # Satu baris: Cek update (sekali klik langsung download & pasang; tetap bisa diklik saat app sibuk,
+        # update jalan begitu proses selesai) + ganti bahasa (Indonesia <-> English).
+        row = tk.Frame(foot, bg=SIDE)
+        row.pack(fill="x", pady=(0, 8))
+        other = "id" if self.lang == "en" else "en"
+        FlatButton(row, "🌐 " + other.upper(), lambda: self.on_switch_lang(other)).pack(side="right")
+        FlatButton(row, "↻  " + self.tr("check_update"), lambda: self.on_check_update(install=True),
+                   anchor="w").pack(side="left", fill="x", expand=True, padx=(0, 6))
         label(foot, self.tr("version", v=updater.VERSION) + "  ·  IT Support", 8, MUTED).pack(anchor="w")
 
     def _build_topbar(self, main):
@@ -2929,15 +2945,13 @@ class App:
         self._run(self.tr("opening"), work)
 
     def apply_iat_profile(self, me):
-        """Profil Report dari App HRGA (nama tampilan, bahasa, item rutin) jadi acuan draf di laptop.
+        """Profil Report dari App HRGA (nama tampilan, item rutin) jadi acuan draf di laptop.
+        Bahasa tetap pilihan user di laptop ini (tombol bahasa di sidebar / Pengaturan).
         Nilai kosong di server tidak menimpa pengaturan lokal."""
         prof = me.get("profile") or {}
         changed = False
         if me.get("display_name") and me["display_name"] != self.cfg.get("name"):
             self.cfg["name"] = me["display_name"]
-            changed = True
-        if me.get("language") in ("id", "en") and me["language"] != self.cfg.get("lang"):
-            self.cfg["lang"] = me["language"]
             changed = True
         if prof.get("routine") and list(prof["routine"]) != list(self.cfg.get("routine") or []):
             self.cfg["routine"] = list(prof["routine"])

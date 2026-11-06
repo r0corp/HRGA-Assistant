@@ -27,8 +27,8 @@ DEFAULTS = {
     "name": "",
     "phone": "",
     "start_hour": 6,
-    "end_hour": 17,
-    "lang": "id",
+    "end_hour": 21,            # sampai batas kirim report (21:00), supaya kerja sore tidak terbuang
+    "lang": "en",              # bahasa bawaan instalasi baru: English
     # Pekerjaan rutin harian yang selalu masuk report, diselipkan di nomor acak.
     "routine": [],
     # Nama chat yang tidak pernah dibaca, mis. chat keluarga.
