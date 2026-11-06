@@ -10,6 +10,10 @@ PRE_RE = re.compile(
 )
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+# WhatsApp Web berbahasa Indonesia memakai nama hari & "Kemarin" di daftar chat dan pemisah tanggal.
+WEEKDAYS_ID = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+TODAY_WORDS = {"today", "hari ini"}
+YESTERDAY_WORDS = {"yesterday", "kemarin"}
 
 TIME_LABEL_RE = re.compile(r"^\d{1,2}[:.]\d{2}(\s*[AaPp][Mm])?$")
 DATE_LABEL_RE = re.compile(r"^\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}$")
@@ -76,19 +80,25 @@ def parse_pre(pre, order="MDY"):
 
 
 def label_to_date(label, today, order="MDY"):
-    """Label waktu di daftar chat ("15:28", "Yesterday", "Friday", "10/20/2026") -> tanggal."""
-    label = label.strip()
+    """Label waktu di daftar chat / pemisah tanggal -> tanggal.
 
-    if TIME_LABEL_RE.match(label):
+    Contoh: "15:28", "Yesterday", "Kemarin", "Friday", "Jumat", "TODAY", "HARI INI", "10/20/2026".
+    """
+    label = label.strip()
+    low = label.lower()
+
+    if TIME_LABEL_RE.match(label) or low in TODAY_WORDS:
         return today
 
-    if label == "Yesterday":
+    if low in YESTERDAY_WORDS:
         return today - timedelta(days=1)
 
-    if label in WEEKDAYS:
-        # Nama hari dipakai WhatsApp untuk 2-6 hari ke belakang.
-        back = (today.weekday() - WEEKDAYS.index(label)) % 7 or 7
-        return today - timedelta(days=back)
+    for names in (WEEKDAYS, WEEKDAYS_ID):
+        hit = next((i for i, n in enumerate(names) if n.lower() == low), None)
+        if hit is not None:
+            # Nama hari dipakai WhatsApp untuk 2-6 hari ke belakang.
+            back = (today.weekday() - hit) % 7 or 7
+            return today - timedelta(days=back)
 
     if DATE_LABEL_RE.match(label):
         return parse_date(label, order)

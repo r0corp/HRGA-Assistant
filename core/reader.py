@@ -5,6 +5,7 @@ import os
 import random
 import re
 import time
+from datetime import date, datetime
 
 from playwright.sync_api import sync_playwright
 
@@ -22,7 +23,7 @@ JS_VISIBLE_ROWS = """
   const titled = [...r.querySelectorAll('span[title]')].map(s => s.getAttribute('title')).filter(Boolean);
   const lines = r.innerText.split('\\n').map(s => s.trim()).filter(Boolean);
   const name = titled[0] || lines.find(l => l.length > 2) || lines[0] || '';
-  const label = lines.find(l => /^(\\d{1,2}[:.]\\d{2}(\\s*[AaPp][Mm])?|Yesterday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|\\d{1,4}[\\/.-]\\d{1,2}[\\/.-]\\d{1,4})$/.test(l)) || '';
+  const label = lines.find(l => /^(\\d{1,2}[:.]\\d{2}(\\s*[AaPp][Mm])?|Yesterday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Kemarin|Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu|\\d{1,4}[\\/.-]\\d{1,2}[\\/.-]\\d{1,4})$/.test(l)) || '';
   return {name, label};
 })
 """
@@ -100,19 +101,50 @@ JS_MESSAGES = """
 () => {
   const m = document.querySelector('#main');
   const isOut = """ + JS_IS_OUT + """;
-  const out = [...m.querySelectorAll('[data-pre-plain-text]')]
-    .filter(el => (el.getAttribute('data-pre-plain-text') || '').startsWith('['))
-    .map(el => {
-      const ts = [...el.querySelectorAll('.selectable-text')].filter(t => {
-        const q = t.closest('[role=button]');
-        return !(q && el.contains(q)) && !t.parentElement.closest('.selectable-text');
-      });
-      return {
-        pre: el.getAttribute('data-pre-plain-text') || '',
-        text: (ts.length ? ts.map(t => t.innerText).join('\\n') : el.innerText || '').trim(),
-        out: isOut(el, m),
-      };
+  const SEP = /^(today|yesterday|hari ini|kemarin|monday|tuesday|wednesday|thursday|friday|saturday|sunday|senin|selasa|rabu|kamis|jumat|sabtu|minggu|\\d{1,4}[\\/.-]\\d{1,2}[\\/.-]\\d{1,4})$/i;
+  const TIME = /^\\d{1,2}[:.]\\d{2}(\\s*[AaPp][Mm])?$/;
+  const textOf = el => {
+    const ts = [...el.querySelectorAll('.selectable-text')].filter(t => {
+      const q = t.closest('[role=button]');
+      return !(q && el.contains(q)) && !t.parentElement.closest('.selectable-text');
     });
+    return (ts.length ? ts.map(t => t.innerText).join('\\n') : el.innerText || '').trim();
+  };
+  // Lampiran tanpa teks (foto, dokumen, video, pesan suara) tidak punya data-pre-plain-text,
+  // jadi dikenali dari isinya; tanggalnya dari pemisah tanggal terakhir di atasnya.
+  const kindOf = el => {
+    const icons = [...el.querySelectorAll('[data-icon]')].map(i => (i.getAttribute('data-icon') || '').toLowerCase()).join(' ');
+    const lines = (el.innerText || '').split('\\n').map(s => s.trim()).filter(Boolean);
+    const file = lines.find(l => /\\.(pdf|xlsx?|xlsm|csv|docx?|pptx?|txt|zip|rar|jpe?g|png|heic|mp4)$/i.test(l));
+    if (file || /document|doc-|pdf|xls|ppt/.test(icons)) return {kind: 'dokumen', name: file || ''};
+    if (el.querySelector('audio') || /ptt|audio|mic/.test(icons)) return {kind: 'suara'};
+    if (/video|media-play|play/.test(icons) || el.querySelector('video')) return {kind: 'video'};
+    if (el.querySelector('img[src^="blob:"], img[src^="data:image"]') || /media|image|photo/.test(icons)) return {kind: 'foto'};
+    if (/location|map/.test(icons)) return {kind: 'lokasi'};
+    return null;
+  };
+  let sep = '';
+  const out = [];
+  for (const el of m.querySelectorAll('[data-id], span')) {
+    if (el.tagName === 'SPAN') {
+      if (el.children.length || el.closest('[data-id]')) continue;
+      const t = (el.innerText || '').trim();
+      if (SEP.test(t)) sep = t;
+      continue;
+    }
+    if (el.parentElement && el.parentElement.closest('[data-id]')) continue;
+    const preEl = el.querySelector('[data-pre-plain-text]');
+    const pre = preEl ? preEl.getAttribute('data-pre-plain-text') || '' : '';
+    if (pre.startsWith('[')) {
+      out.push({pre, text: textOf(preEl), out: isOut(el, m), sep});
+      continue;
+    }
+    const k = kindOf(el);
+    if (!k) continue;
+    const time = (el.innerText || '').split('\\n').map(s => s.trim()).find(l => TIME.test(l)) || '';
+    if (!time) continue;
+    out.push({pre: '', media: k.kind, name: k.name || '', time, out: isOut(el, m), sep});
+  }
   return {
     messages: out,
     older_on_phone: /older messages from your phone/i.test(m.innerText),
@@ -140,6 +172,56 @@ JS_OUT_COUNT = """
   return [...m.querySelectorAll('[data-pre-plain-text]')].filter(el => isOut(el, m)).length;
 }
 """
+
+
+MEDIA_LABEL = {"foto": "[Foto]", "dokumen": "[Dokumen]", "video": "[Video]", "suara": "[Pesan suara]",
+               "lokasi": "[Lokasi]"}
+
+
+def build_messages(raw, since, order, label_order="DMY", today=None):
+    """Ubah hasil JS_MESSAGES jadi daftar pesan sejak since.
+
+    Pesan teks memakai tanggal & pengirim dari data-pre-plain-text. Lampiran tanpa teks
+    memakai jam di gelembungnya, tanggal dari pemisah tanggal di atasnya (kalau tidak ada,
+    tanggal pesan teks sebelumnya), dan pengirim dari pesan teks terdekat di sisi yang sama.
+    """
+    today = today or date.today()
+    messages = []
+    last_date = None
+    last_sender = {True: "", False: ""}
+    for m in raw:
+        if m.get("pre"):
+            parsed = parse_pre(m["pre"], order)
+            if not parsed:
+                continue
+            dt, sender = parsed
+            last_date = dt.date()
+            last_sender[bool(m["out"])] = sender
+            text = m.get("text", "")
+        else:
+            day = label_to_date(m.get("sep", ""), today, label_order) if m.get("sep") else None
+            day = day or last_date
+            if not day:
+                continue
+            hh, mm = (int(x) for x in re.split(r"[:.]", re.match(r"\d{1,2}[:.]\d{2}", m["time"]).group(0)))
+            ampm = m["time"][-2:].upper()
+            if ampm == "PM" and hh < 12:
+                hh += 12
+            elif ampm == "AM" and hh == 12:
+                hh = 0
+            dt = datetime(day.year, day.month, day.day, hh, mm)
+            sender = last_sender[bool(m["out"])]
+            label = MEDIA_LABEL.get(m.get("media"), "[Lampiran]")
+            text = f"{label[:-1]}: {m['name']}]" if m.get("name") else label
+        if dt.date() < since:
+            continue
+        messages.append({
+            "time": dt.isoformat(timespec="minutes"),
+            "sender": sender,
+            "out": m["out"],
+            "text": text,
+        })
+    return messages
 
 
 def _pause(lo=1.0, hi=3.0):
@@ -296,22 +378,7 @@ class WhatsApp:
             self.page.evaluate(JS_SCROLL_MESSAGES_UP)
             time.sleep(1.2)
 
-        messages = []
-        for m in data["messages"]:
-            parsed = parse_pre(m["pre"], order)
-            if not parsed:
-                continue
-            dt, sender = parsed
-            if dt.date() < since:
-                continue
-            messages.append({
-                "time": dt.isoformat(timespec="minutes"),
-                "sender": sender,
-                "out": m["out"],
-                "text": m["text"],
-            })
-
-        return messages
+        return build_messages(data["messages"], since, order, self.date_order, today=date.today())
 
     def read_chats(self, names, since, progress=None):
         """Buka tiap chat dan ambil pesannya. Hasil: {nama: [pesan]}."""
