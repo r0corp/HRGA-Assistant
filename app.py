@@ -485,7 +485,6 @@ class SettingsDialog(tk.Toplevel):
         tr = app.tr
         self.title(tr("settings_title"))
         self.transient(app.root)
-        self.resizable(False, False)
         self.grab_set()
 
         cfg = app.cfg
@@ -496,12 +495,34 @@ class SettingsDialog(tk.Toplevel):
         self.v_lang = tk.StringVar(value=LANGS.get(cfg["lang"], LANGS["id"]))
         self.v_auto = tk.BooleanVar(value=autostart.is_enabled())
 
-        body = tk.Frame(self, bg=BG)
-        body.pack(fill="both", expand=True, padx=20, pady=16)
-        left = tk.Frame(body, bg=BG, width=330)
+        # Tombol Simpan/Batal dipasang lebih dulu supaya selalu terlihat di bawah, apa pun ukuran layar.
+        foot = tk.Frame(self, bg=BG)
+        foot.pack(side="bottom", fill="x", padx=20, pady=(8, 14))
+        tk.Frame(self, bg=BORDER, height=1).pack(side="bottom", fill="x")
+        FlatButton(foot, "\u23fb  " + tr("logout_all"), self._logout_all, "ghost").pack(side="left")
+        FlatButton(foot, tr("save"), self._save, "primary").pack(side="right")
+        FlatButton(foot, tr("cancel"), self.destroy).pack(side="right", padx=(0, 8))
+
+        # Isi pengaturan dalam kanvas: tiga kolom (landscape), bisa digulir kalau layar pendek.
+        holder = tk.Frame(self, bg=BG)
+        holder.pack(fill="both", expand=True)
+        self._canvas = tk.Canvas(holder, bg=BG, highlightthickness=0, bd=0)
+        self._vbar = ttk.Scrollbar(holder, orient="vertical", command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=self._vbar.set)
+        self._canvas.pack(side="left", fill="both", expand=True)
+        body = tk.Frame(self._canvas, bg=BG)
+        self._body_win = self._canvas.create_window(0, 0, window=body, anchor="nw")
+        body.bind("<Configure>", lambda e: self._canvas.configure(scrollregion=self._canvas.bbox("all")))
+        self._canvas.bind("<Configure>", lambda e: self._canvas.itemconfigure(self._body_win, width=max(e.width, body.winfo_reqwidth())))
+        self.bind("<MouseWheel>", lambda e: self._canvas.yview_scroll(int(-e.delta / 120), "units"))
+        inner = tk.Frame(body, bg=BG)
+        inner.pack(fill="both", expand=True, padx=20, pady=16)
+        left = tk.Frame(inner, bg=BG)
         left.pack(side="left", fill="y", anchor="n")
-        right = tk.Frame(body, bg=BG, width=330)
+        right = tk.Frame(inner, bg=BG)
         right.pack(side="left", fill="y", anchor="n", padx=(16, 0))
+        third = tk.Frame(inner, bg=BG)
+        third.pack(side="left", fill="y", anchor="n", padx=(16, 0))
 
         # Umum: identitas, bahasa, autostart.
         box = self._group(left, tr("general"))
@@ -557,7 +578,7 @@ class SettingsDialog(tk.Toplevel):
         self.v_url = tk.StringVar(value=cfg.get("server_url", ""))
         self.v_send_to = tk.StringVar(value=cfg.get("send_to", "group"))
         self.v_server = tk.BooleanVar(value=cfg.get("server_mode", False))
-        box = self._group(left, tr("srv_section"))
+        box = srv_box = self._group(third, tr("srv_section"))
         logged = bool(cfg.get("server_token"))
         who = cfg.get("server_user", "")
         if cfg.get("server_role") in team.ROLES:
@@ -584,7 +605,7 @@ class SettingsDialog(tk.Toplevel):
         self.v_iat_username = tk.StringVar(value=cfg.get("iat_username", ""))
         self.v_iat_password = tk.StringVar(value="")
         iat_user = cfg.get("iat_user", "")
-        label(box, tr("iat_title"), 9, TEXT, True).pack(anchor="w", pady=(10, 0))
+        box = self._group(third, tr("iat_title"))
         label(box, tr("iat_connected", u=iat_user) if cfg.get("iat_token") else tr("iat_not_connected"), 8,
               GREEN if cfg.get("iat_token") else MUTED).pack(anchor="w")
         if full or not cfg.get("iat_url"):
@@ -598,6 +619,7 @@ class SettingsDialog(tk.Toplevel):
             self._field(box, tr("iat_token"), ttk.Entry(box, textvariable=self.v_iat_token, width=40, show="•"),
                         tr("iat_token_hint"))
         if app.server:
+            box = srv_box
             row = tk.Frame(box, bg=CARD)
             row.pack(fill="x", pady=(4, 0))
             label(row, tr("server_running", p=app.server.port), 8, GREEN).pack(side="left")
@@ -608,23 +630,26 @@ class SettingsDialog(tk.Toplevel):
             self._funnel_status()
 
         # Tentang: versi dan update.
-        box = self._group(right, tr("about"))
+        box = self._group(left, tr("about"))
         row = tk.Frame(box, bg=CARD)
         row.pack(fill="x")
         label(row, f"{settings.APP_NAME}  ·  " + tr("version", v=updater.VERSION), 9, MUTED).pack(side="left")
         FlatButton(row, tr("check_update"), lambda: app.on_check_update(), small=True).pack(side="right")
         label(box, tr("credit"), 9, MUTED).pack(anchor="w", pady=(6, 0))
 
-        foot = tk.Frame(self, bg=BG)
-        foot.pack(fill="x", padx=20, pady=(0, 16))
-        FlatButton(foot, "\u23fb  " + tr("logout_all"), self._logout_all, "ghost").pack(side="left")
-        FlatButton(foot, tr("save"), self._save, "primary").pack(side="right")
-        FlatButton(foot, tr("cancel"), self.destroy).pack(side="right", padx=(0, 8))
-
+        # Ukuran dialog: selebar isi (3 kolom), setinggi isi tapi tidak melebihi layar.
         self.update_idletasks()
-        x = app.root.winfo_rootx() + (app.root.winfo_width() - self.winfo_width()) // 2
-        y = app.root.winfo_rooty() + 40
-        self.geometry(f"+{x}+{y}")
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        want_w = body.winfo_reqwidth()
+        want_h = body.winfo_reqheight() + foot.winfo_reqheight() + 20
+        w = min(want_w + 20, sw - 40)
+        h = min(want_h, sh - 110)                 # sisakan ruang untuk taskbar & judul jendela
+        if want_h > h:
+            self._vbar.pack(side="right", fill="y", before=self._canvas)
+        self.minsize(min(640, w), min(420, h))
+        x = max((sw - w) // 2, 0)
+        y = max((sh - h) // 2 - 30, 0)
+        self.geometry(f"{w}x{h}+{x}+{y}")
 
     def _group(self, parent, title):
         label(parent, title.upper(), 8, MUTED, True).pack(anchor="w", pady=(6, 4))
@@ -638,7 +663,7 @@ class SettingsDialog(tk.Toplevel):
         label(parent, text).pack(anchor="w", pady=(4, 2))
         widget.pack(in_=parent, anchor="w", fill="x" if isinstance(widget, (ttk.Entry, tk.Text)) else None)
         if hint:
-            label(parent, hint, 8, MUTED).pack(anchor="w")
+            label(parent, hint, 8, MUTED, wraplength=330, justify="left").pack(anchor="w")
 
     def _read(self):
         try:
@@ -1530,8 +1555,11 @@ class App:
         self.apply_server_mode()
 
         root.title(settings.DISPLAY_NAME)
-        root.geometry("1220x780")
-        root.minsize(1040, 640)
+        # Ukuran awal menyesuaikan layar (laptop 1366x768 juga muat); bisa diperbesar/diperkecil.
+        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+        w, h = min(1220, sw - 40), min(780, sh - 100)
+        root.geometry(f"{w}x{h}+{max((sw - w) // 2, 0)}+{max((sh - h) // 2 - 30, 0)}")
+        root.minsize(min(900, w), min(560, h))
         sv_ttk.set_theme("light")
         # sv_ttk mewarnai ulang semua widget tk (tk_setPalette) saat event
         # <<ThemeChanged>>; tunggu event itu selesai supaya warna kartu,
